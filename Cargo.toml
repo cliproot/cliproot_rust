@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cliproot-core",
+    "crates/cliproot-store",
+    "crates/cliproot-cli",
+    "crates/cliproot-mcp",
+]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+clap = { version = ">=4.5, <4.5.40", features = ["derive"] }
+colored = "2"
+uuid = { version = ">=1, <1.16", features = ["v4"] }
+unicode-normalization = "0.1"
+tempfile = ">=3, <3.19"
+
+# workspace crates
+cliproot-core = { path = "crates/cliproot-core" }
+cliproot-store = { path = "crates/cliproot-store" }
+
+# Workspace-level integration tests need a virtual member with dev-deps.
+# Move integration tests into cliproot-store instead.
