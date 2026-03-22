@@ -16,21 +16,45 @@ clip (text + source) ──[summary]──► derived clip ──[paraphrase]─
 ```
 cliproot_rust/
 ├── Cargo.toml              # workspace root
+├── rust-toolchain.toml     # pins Rust 1.88
+├── .github/workflows/
+│   ├── ci.yml              # fmt + clippy + test on push/PR
+│   └── release.yml         # multi-platform binary release on tag
 ├── crates/
 │   ├── cliproot-core/      # protocol model, hashing, verification
 │   ├── cliproot-store/     # hybrid storage: files + SQLite index
-│   ├── cliproot-cli/       # clap-based CLI binary (cliproot)
-│   └── cliproot-mcp/       # stdio MCP server (cliproot-mcp)
+│   ├── cliproot-cli/       # clap-based CLI binary (cliproot), includes MCP server
+│   └── cliproot-mcp/       # MCP server library + standalone binary
 └── crates/cliproot-store/tests/
     └── roundtrip.rs        # integration tests
 ```
 
-**Dependency graph**: `cli → store → core`, `mcp → store → core`
+**Dependency graph**: `cli → mcp → store → core`
 
-## Requirements
+## Install
 
-- Rust 1.85+ (stable) — required by `rmcp` 1.2 (Rust 2024 edition)
-- No system SQLite needed — `rusqlite` bundles SQLite via the `bundled` feature
+### From source (Rust)
+
+Requires Rust 1.88+ (pinned via `rust-toolchain.toml`). No system SQLite needed — it's bundled.
+
+```bash
+cargo install --path crates/cliproot-cli
+```
+
+This installs a single `cliproot` binary that includes both the CLI and the MCP server.
+
+### From GitHub Releases
+
+Pre-built binaries are available for each tagged release:
+
+| Platform | Archive |
+|----------|---------|
+| Linux x86_64 | `cliproot-x86_64-unknown-linux-gnu.tar.gz` |
+| macOS x86_64 | `cliproot-x86_64-apple-darwin.tar.gz` |
+| macOS Apple Silicon | `cliproot-aarch64-apple-darwin.tar.gz` |
+| Windows x86_64 | `cliproot-x86_64-pc-windows-msvc.zip` |
+
+Download from [Releases](https://github.com/cliproot/cliproot_rust/releases), extract, and add to your `PATH`.
 
 ## Build
 
@@ -40,16 +64,11 @@ cd cliproot_rust
 # Check all crates compile
 cargo check --workspace
 
-# Build the CLI binary
+# Build the CLI binary (includes MCP server)
 cargo build -p cliproot-cli --release
-
-# Build the MCP server binary
-cargo build -p cliproot-mcp --release
 ```
 
-Binaries land in `target/release/`:
-- `target/release/cliproot` — CLI
-- `target/release/cliproot-mcp` — MCP server
+The binary lands at `target/release/cliproot`.
 
 ## Test
 
@@ -67,9 +86,19 @@ cargo test -p cliproot-store
 cargo test --workspace -- --nocapture
 ```
 
-## MCP Server (`cliproot-mcp`)
+## MCP Server
 
-`cliproot-mcp` is a stdio MCP server that exposes Cliproot provenance operations as typed tools for AI agents (Claude Code, Cline, etc.). The MCP client spawns the process and communicates over stdin/stdout using JSON-RPC 2.0.
+The MCP server is bundled into the `cliproot` binary as the `mcp` subcommand. It exposes Cliproot provenance operations as typed tools for AI agents (Claude Code, Cline, etc.) over stdin/stdout using JSON-RPC 2.0.
+
+```bash
+# Start the MCP server (discovers .cliproot/ from CWD)
+cliproot mcp
+
+# Or specify a repo path explicitly
+cliproot mcp --path /path/to/project
+```
+
+The standalone `cliproot-mcp` binary is also still available for backward compatibility.
 
 ### Available MCP tools
 
@@ -91,10 +120,10 @@ cargo test --workspace -- --nocapture
 
 ```bash
 # Scoped to the current project (recommended)
-claude mcp add cliproot -- /path/to/target/release/cliproot-mcp --path /path/to/project
+claude mcp add cliproot -- cliproot mcp --path /path/to/project
 
 # Using CLIPROOT_REPO environment variable instead of --path
-claude mcp add cliproot -e CLIPROOT_REPO=/path/to/project -- /path/to/target/release/cliproot-mcp
+claude mcp add cliproot -e CLIPROOT_REPO=/path/to/project -- cliproot mcp
 ```
 
 The server discovers the `.cliproot/` repository by walking up from the `--path` argument (or `CLIPROOT_REPO`). If neither is provided it walks up from the working directory at startup.
@@ -129,19 +158,18 @@ All resources return `application/json`.
 ### Manual smoke test
 
 ```bash
-BINARY=./target/release/cliproot-mcp
 REPO=/path/to/project   # directory containing .cliproot/
 
 # Initialize request
 echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}' \
-  | "$BINARY" --path "$REPO"
+  | cliproot mcp --path "$REPO"
 
 # List available tools
 (printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}\n'; \
  sleep 0.2; printf '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'; \
  sleep 0.2; printf '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}\n'; \
  sleep 1) \
-  | "$BINARY" --path "$REPO"
+  | cliproot mcp --path "$REPO"
 
 # List available resources and templates
 (printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}\n'; \
@@ -149,14 +177,14 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
  sleep 0.2; printf '{"jsonrpc":"2.0","id":2,"method":"resources/list","params":{}}\n'; \
  sleep 0.2; printf '{"jsonrpc":"2.0","id":3,"method":"resources/templates/list","params":{}}\n'; \
  sleep 1) \
-  | "$BINARY" --path "$REPO"
+  | cliproot mcp --path "$REPO"
 
 # Read the clip inventory resource
 (printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}\n'; \
  sleep 0.2; printf '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'; \
  sleep 0.2; printf '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"cliproot://clips"}}\n'; \
  sleep 1) \
-  | "$BINARY" --path "$REPO"
+  | cliproot mcp --path "$REPO"
 ```
 
 ---
@@ -309,6 +337,28 @@ cliproot help <command>
 ```
 
 Clips are content-addressed: the same text from the same source always produces the same `clipHash`, regardless of when or where it was created.
+
+## CI/CD
+
+GitHub Actions run automatically:
+
+- **CI** (`ci.yml`) — on every push to `main` and all PRs:
+  - `cargo fmt --all -- --check`
+  - `cargo clippy --workspace -- -D warnings`
+  - `cargo test --workspace`
+
+- **Release** (`release.yml`) — on tag push matching `v*` (e.g. `v0.1.0`):
+  - Builds release binaries for Linux, macOS (x86 + ARM), and Windows
+  - Creates a GitHub Release with attached archives
+
+### Creating a release
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The release workflow builds all platform binaries and publishes them to [GitHub Releases](https://github.com/cliproot/cliproot_rust/releases).
 
 ## Protocol version
 
