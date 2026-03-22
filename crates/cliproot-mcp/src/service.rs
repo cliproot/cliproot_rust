@@ -10,9 +10,15 @@ use cliproot_core::{
 };
 use cliproot_store::StoreError;
 use rmcp::{
-    ServerHandler,
+    RoleServer, ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::{CallToolResult, Content, ErrorData, Implementation, ServerInfo},
+    model::{
+        Annotated, CallToolResult, Content, ErrorData, Implementation,
+        ListResourceTemplatesResult, ListResourcesResult, PaginatedRequestParams,
+        RawResource, RawResourceTemplate, ReadResourceRequestParams,
+        ReadResourceResult, ResourceContents, ServerCapabilities, ServerInfo,
+    },
+    service::RequestContext,
     tool, tool_handler, tool_router,
 };
 use serde_json::json;
@@ -60,6 +66,52 @@ impl ClipRootService {
         Self {
             repo: Arc::new(repo),
             tool_router: Self::tool_router(),
+        }
+    }
+
+    /// Resolve a `cliproot://` URI and return serialised JSON.
+    async fn read_resource_uri(&self, uri: &str) -> Result<String, String> {
+        let path = uri.strip_prefix("cliproot://").ok_or("invalid URI scheme")?;
+
+        if path == "clips" {
+            let clips = self.repo.list_clips(None, None, Some(200)).await
+                .map_err(|e| e.to_string())?;
+            let summaries: Vec<serde_json::Value> = clips.iter().map(|c| {
+                let preview = c.content.as_deref().map(|s| {
+                    if s.len() > 200 { &s[..200] } else { s }
+                });
+                json!({
+                    "clipHash": c.clip_hash,
+                    "id": c.id,
+                    "documentId": c.document_id,
+                    "sourceRefs": c.source_refs,
+                    "content": preview,
+                })
+            }).collect();
+            serde_json::to_string_pretty(&json!({
+                "clips": summaries, "count": summaries.len()
+            })).map_err(|e| e.to_string())
+        } else if let Some(hash_or_id) = path.strip_prefix("clips/") {
+            let clip = self.repo.get_clip(hash_or_id.to_string()).await
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("clip not found: {hash_or_id}"))?;
+            serde_json::to_string_pretty(&clip).map_err(|e| e.to_string())
+        } else if let Some(hash_or_id) = path.strip_prefix("lineage/") {
+            let nodes = self.repo.trace(hash_or_id.to_string()).await
+                .map_err(|e| e.to_string())?;
+            let result: Vec<serde_json::Value> = nodes.iter().map(|n| json!({
+                "clipHash": n.clip_hash,
+                "parentHash": n.parent_hash,
+                "transformationType": n.transformation_type,
+                "depth": n.depth,
+            })).collect();
+            serde_json::to_string_pretty(&result).map_err(|e| e.to_string())
+        } else if let Some(hash_or_id) = path.strip_prefix("bundles/") {
+            let bundle = self.repo.export_bundle(hash_or_id.to_string()).await
+                .map_err(|e| e.to_string())?;
+            serde_json::to_string_pretty(&bundle).map_err(|e| e.to_string())
+        } else {
+            Err(format!("unknown resource path: {path}"))
         }
     }
 }
@@ -433,8 +485,112 @@ impl ClipRootService {
 #[tool_handler]
 impl ServerHandler for ClipRootService {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(Default::default()).with_server_info(
+        ServerInfo::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_resources()
+                .build(),
+        )
+        .with_server_info(
             Implementation::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")),
         )
+    }
+
+    fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> impl std::future::Future<Output = Result<ListResourcesResult, ErrorData>> + Send + '_ {
+        std::future::ready(Ok(ListResourcesResult {
+            resources: vec![Annotated::new(
+                RawResource {
+                    uri: "cliproot://clips".into(),
+                    name: "cliproot-clip-list".into(),
+                    title: Some("All Clips".into()),
+                    description: Some(
+                        "Summary list of all clips in the repository".into(),
+                    ),
+                    mime_type: Some("application/json".into()),
+                    size: None,
+                    icons: None,
+                    meta: None,
+                },
+                None,
+            )],
+            meta: None,
+            next_cursor: None,
+        }))
+    }
+
+    fn list_resource_templates(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> impl std::future::Future<Output = Result<ListResourceTemplatesResult, ErrorData>>
+           + Send
+           + '_ {
+        std::future::ready(Ok(ListResourceTemplatesResult {
+            resource_templates: vec![
+                Annotated::new(
+                    RawResourceTemplate {
+                        uri_template: "cliproot://clips/{hash_or_id}".into(),
+                        name: "cliproot-clip".into(),
+                        title: Some("Clip Details".into()),
+                        description: Some(
+                            "Full details of a clip by hash or ID".into(),
+                        ),
+                        mime_type: Some("application/json".into()),
+                        icons: None,
+                    },
+                    None,
+                ),
+                Annotated::new(
+                    RawResourceTemplate {
+                        uri_template: "cliproot://lineage/{hash_or_id}".into(),
+                        name: "cliproot-lineage".into(),
+                        title: Some("Clip Lineage".into()),
+                        description: Some(
+                            "Derivation lineage trace for a clip".into(),
+                        ),
+                        mime_type: Some("application/json".into()),
+                        icons: None,
+                    },
+                    None,
+                ),
+                Annotated::new(
+                    RawResourceTemplate {
+                        uri_template: "cliproot://bundles/{hash_or_id}".into(),
+                        name: "cliproot-bundle".into(),
+                        title: Some("CRP Bundle Export".into()),
+                        description: Some(
+                            "Full provenance bundle for a clip and its lineage".into(),
+                        ),
+                        mime_type: Some("application/json".into()),
+                        icons: None,
+                    },
+                    None,
+                ),
+            ],
+            meta: None,
+            next_cursor: None,
+        }))
+    }
+
+    fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> impl std::future::Future<Output = Result<ReadResourceResult, ErrorData>> + Send + '_ {
+        async move {
+            let uri = &request.uri;
+            let json_str = self
+                .read_resource_uri(uri)
+                .await
+                .map_err(|e| ErrorData::resource_not_found(e, None))?;
+            Ok(ReadResourceResult::new(vec![
+                ResourceContents::text(json_str, uri.clone())
+                    .with_mime_type("application/json"),
+            ]))
+        }
     }
 }

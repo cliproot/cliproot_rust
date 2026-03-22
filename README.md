@@ -83,6 +83,9 @@ cargo test --workspace -- --nocapture
 | `cliproot_list` | List clips with optional filtering |
 | `cliproot_search` | Search clip content by substring |
 | `cliproot_export` | Export a clip and its full provenance lineage as a CRP bundle |
+| `cliproot_annotate` | Annotate a document with inline citations by matching text against stored clips |
+| `cliproot_cite` | Generate a bibliography/citation list for a document from clip provenance |
+| `cliproot_doctor` | Generate a provenance coverage report showing which paragraphs have source provenance |
 
 ### Register with Claude Code
 
@@ -103,6 +106,26 @@ claude mcp list
 # cliproot: /path/to/cliproot-mcp ... ✓ Connected
 ```
 
+### Available MCP resources
+
+The server also exposes clip data as MCP resources for context injection. AI clients can read these directly into their context window without explicit tool calls.
+
+**Static resource:**
+
+| URI | Description |
+|-----|-------------|
+| `cliproot://clips` | Summary list of all clips in the repository (up to 200, with content previews) |
+
+**Resource templates (parameterized):**
+
+| URI Template | Description |
+|-------------|-------------|
+| `cliproot://clips/{hash_or_id}` | Full details of a single clip by hash or ID |
+| `cliproot://lineage/{hash_or_id}` | Derivation lineage trace for a clip |
+| `cliproot://bundles/{hash_or_id}` | Full CRP bundle export for a clip and its lineage |
+
+All resources return `application/json`.
+
 ### Manual smoke test
 
 ```bash
@@ -115,8 +138,23 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 
 # List available tools
 (printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}\n'; \
- sleep 0.2; \
- printf '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}\n'; \
+ sleep 0.2; printf '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'; \
+ sleep 0.2; printf '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}\n'; \
+ sleep 1) \
+  | "$BINARY" --path "$REPO"
+
+# List available resources and templates
+(printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}\n'; \
+ sleep 0.2; printf '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'; \
+ sleep 0.2; printf '{"jsonrpc":"2.0","id":2,"method":"resources/list","params":{}}\n'; \
+ sleep 0.2; printf '{"jsonrpc":"2.0","id":3,"method":"resources/templates/list","params":{}}\n'; \
+ sleep 1) \
+  | "$BINARY" --path "$REPO"
+
+# Read the clip inventory resource
+(printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}\n'; \
+ sleep 0.2; printf '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'; \
+ sleep 0.2; printf '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"cliproot://clips"}}\n'; \
  sleep 1) \
   | "$BINARY" --path "$REPO"
 ```
@@ -201,6 +239,56 @@ cliproot export sha256-abc123...
 ```bash
 cliproot ingest bundle.json
 ```
+
+### Annotate a document with inline citations
+
+Match document text against stored clips and insert citation markers.
+
+```bash
+# Print annotated document to stdout (footnote style by default)
+cliproot annotate report.md
+
+# Choose annotation style
+cliproot annotate report.md --style footnote          # [1] markers + Sources section
+cliproot annotate report.md --style inline-comment    # <!-- [cliproot:sha256-...] --> comments
+cliproot annotate report.md --style bracket           # [cliproot:sha256-...] inline
+
+# Edit the file in place
+cliproot annotate report.md --in-place
+
+# Adjust match sensitivity (default: 0.4)
+cliproot annotate report.md --threshold 0.6
+
+# JSON output — full AnnotateResult with annotated_text and citations array
+cliproot annotate report.md --format json
+```
+
+### Generate a citation list
+
+Produce a numbered bibliography matching document text against stored clips.
+
+```bash
+cliproot cite report.md
+# → 1. [Title] <url> (sha256-...)
+
+cliproot cite report.md --threshold 0.5
+cliproot cite report.md --format json
+```
+
+### Provenance coverage report
+
+Audit which paragraphs in a document have source provenance and which are missing it.
+
+```bash
+cliproot doctor report.md
+# → ✓ [0] Redis uses a single-threaded event loop...
+# → ✗ [1] This paragraph has no provenance coverage.
+
+cliproot doctor report.md --threshold 0.5
+cliproot doctor report.md --format json
+```
+
+Coverage statuses: `covered` (strong match), `partial` (weak match), `uncovered` (no match found).
 
 ### Help
 
