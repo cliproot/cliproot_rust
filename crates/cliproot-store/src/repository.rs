@@ -2,6 +2,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use cliproot_core::{
+    matching::{
+        self, AnnotateResult, AnnotationStyle, Citation, DoctorResult, MatchCandidate,
+    },
     model::*,
     verify::{verify_clip_hash, verify_text_hash},
 };
@@ -268,6 +271,69 @@ impl Repository {
     /// Ingest an external CRP bundle file.
     pub fn ingest_bundle(&self, bundle: &CrpBundle) -> Result<String, StoreError> {
         self.store_bundle(bundle)
+    }
+
+    // ── Phase 2b: Document analysis ──────────────────────────────────────
+
+    /// Load all clips with their source metadata as match candidates.
+    pub fn build_match_candidates(&self) -> Result<Vec<MatchCandidate>, StoreError> {
+        let rows = self.index.list_clips(None, None, Some(10000))?;
+        let mut candidates = Vec::new();
+
+        for row in rows {
+            if let Some(content) = &row.content {
+                let source_refs = self.index.get_source_refs(&row.clip_hash)?;
+                let (source_url, source_title) = if let Some(sr_id) = source_refs.first() {
+                    if let Some(src) = self.index.get_source_by_id(sr_id)? {
+                        (src.source_uri, src.title)
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                };
+
+                candidates.push(MatchCandidate {
+                    clip_hash: row.clip_hash.clone(),
+                    clip_content: content.clone(),
+                    source_url,
+                    source_title,
+                });
+            }
+        }
+
+        Ok(candidates)
+    }
+
+    /// Annotate a document with inline citations matched against stored clips.
+    pub fn annotate(
+        &self,
+        document_text: &str,
+        style: AnnotationStyle,
+        threshold: f64,
+    ) -> Result<AnnotateResult, StoreError> {
+        let candidates = self.build_match_candidates()?;
+        let matches = matching::find_matches(document_text, &candidates, threshold);
+        Ok(matching::annotate_document(
+            document_text,
+            &matches,
+            &candidates,
+            style,
+        ))
+    }
+
+    /// Generate citations for a document matched against stored clips.
+    pub fn cite(&self, document_text: &str, threshold: f64) -> Result<Vec<Citation>, StoreError> {
+        let candidates = self.build_match_candidates()?;
+        let matches = matching::find_matches(document_text, &candidates, threshold);
+        Ok(matching::generate_citations(&matches, &candidates))
+    }
+
+    /// Generate a provenance coverage report for a document.
+    pub fn doctor(&self, document_text: &str, threshold: f64) -> Result<DoctorResult, StoreError> {
+        let candidates = self.build_match_candidates()?;
+        let matches = matching::find_matches(document_text, &candidates, threshold);
+        Ok(matching::generate_doctor_report(document_text, &matches))
     }
 }
 

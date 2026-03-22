@@ -376,6 +376,32 @@ impl IndexDb {
             })
             .collect())
     }
+
+    pub fn get_source_by_id(&self, source_id: &str) -> Result<Option<SourceRow>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, source_type, title, source_uri FROM sources WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query_map(params![source_id], |row| {
+            Ok(SourceRow {
+                id: row.get(0)?,
+                source_type: row.get(1)?,
+                title: row.get(2)?,
+                source_uri: row.get(3)?,
+            })
+        })?;
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SourceRow {
+    pub id: String,
+    pub source_type: String,
+    pub title: Option<String>,
+    pub source_uri: Option<String>,
 }
 
 #[derive(Debug, Clone)]

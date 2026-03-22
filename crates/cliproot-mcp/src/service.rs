@@ -5,6 +5,7 @@ use std::sync::Arc;
 use cliproot_core::{
     create_clip_hash, create_text_hash,
     hash::ClipHashInput,
+    matching::parse_annotation_style,
     model::*,
 };
 use cliproot_store::StoreError;
@@ -383,6 +384,47 @@ impl ClipRootService {
             .await
             .map_err(store_err)?;
         ok_json(&bundle)
+    }
+
+    /// Annotate a document with inline citations by matching text against stored clips.
+    #[tool(description = "Annotate a document with inline citations by matching text against stored clips. Returns the annotated text with citation markers and a list of citations with source URLs.")]
+    async fn cliproot_annotate(
+        &self,
+        Parameters(params): Parameters<AnnotateParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let style = parse_annotation_style(&params.style)
+            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        let result = self.repo
+            .annotate(params.document_text, style, params.threshold)
+            .await
+            .map_err(store_err)?;
+        ok_json(&result)
+    }
+
+    /// Generate a bibliography/citation list for a document from clip provenance.
+    #[tool(description = "Generate a bibliography/citation list for a document by matching text against stored clips. Returns numbered sources with URLs and titles.")]
+    async fn cliproot_cite(
+        &self,
+        Parameters(params): Parameters<CiteParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let citations = self.repo
+            .cite(params.document_text, params.threshold)
+            .await
+            .map_err(store_err)?;
+        ok_json(&json!({ "citations": citations, "count": citations.len() }))
+    }
+
+    /// Generate a provenance coverage report for a document.
+    #[tool(description = "Generate a provenance coverage report showing which paragraphs in a document have source provenance and which are missing it. Useful for auditing AI-generated content.")]
+    async fn cliproot_doctor(
+        &self,
+        Parameters(params): Parameters<DoctorParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let report = self.repo
+            .doctor(params.document_text, params.threshold)
+            .await
+            .map_err(store_err)?;
+        ok_json(&report)
     }
 }
 

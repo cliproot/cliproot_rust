@@ -1,5 +1,8 @@
+pub mod annotate;
+pub mod cite;
 pub mod clip;
 pub mod derive;
+pub mod doctor;
 pub mod export;
 pub mod ingest;
 pub mod init;

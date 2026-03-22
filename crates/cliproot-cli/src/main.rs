@@ -120,6 +120,44 @@ enum Commands {
         #[arg(short, long)]
         output: Option<String>,
     },
+
+    /// Insert inline citations into a document by matching text against stored clips
+    Annotate {
+        /// Path to the document file
+        file: String,
+
+        /// Annotation style: footnote (default), inline-comment, bracket
+        #[arg(long, default_value = "footnote")]
+        style: String,
+
+        /// Modify the file in place instead of writing to stdout
+        #[arg(long)]
+        in_place: bool,
+
+        /// Minimum match confidence threshold (0.0-1.0)
+        #[arg(long, default_value = "0.4")]
+        threshold: f64,
+    },
+
+    /// Generate a bibliography/citation list from clip provenance
+    Cite {
+        /// Path to the document file
+        file: String,
+
+        /// Minimum match confidence threshold (0.0-1.0)
+        #[arg(long, default_value = "0.4")]
+        threshold: f64,
+    },
+
+    /// Provenance coverage report for a document
+    Doctor {
+        /// Path to the document file
+        file: String,
+
+        /// Minimum match confidence threshold (0.0-1.0)
+        #[arg(long, default_value = "0.4")]
+        threshold: f64,
+    },
 }
 
 fn main() {
@@ -163,6 +201,18 @@ fn main() {
         Commands::Ingest { path } => commands::ingest::run(&path, &cli.format),
         Commands::Export { hash, output } => {
             commands::export::run(&hash, output.as_deref(), &cli.format)
+        }
+        Commands::Annotate {
+            file,
+            style,
+            in_place,
+            threshold,
+        } => commands::annotate::run(&file, &style, in_place, threshold, &cli.format),
+        Commands::Cite { file, threshold } => {
+            commands::cite::run(&file, threshold, &cli.format)
+        }
+        Commands::Doctor { file, threshold } => {
+            commands::doctor::run(&file, threshold, &cli.format)
         }
     };
 

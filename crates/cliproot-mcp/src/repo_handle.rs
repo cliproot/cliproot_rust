@@ -5,6 +5,7 @@
 //! a blocking OS thread owns the Repository exclusively and processes commands
 //! sent from async tool handlers.
 
+use cliproot_core::matching::{AnnotateResult, AnnotationStyle, Citation, DoctorResult};
 use cliproot_core::model::{Clip, CrpBundle};
 use cliproot_store::{Repository, StoreError};
 use cliproot_store::index_db::LineageNode;
@@ -23,6 +24,9 @@ pub enum RepoCmd {
     VerifyClip   { hash_or_id: String,             tx: Tx<()> },
     VerifyAll    {                                  tx: Tx<Vec<String>> },
     ExportBundle { hash_or_id: String,             tx: Tx<CrpBundle> },
+    Annotate     { document_text: String, style: AnnotationStyle, threshold: f64, tx: Tx<AnnotateResult> },
+    Cite         { document_text: String, threshold: f64,         tx: Tx<Vec<Citation>> },
+    Doctor       { document_text: String, threshold: f64,         tx: Tx<DoctorResult> },
 }
 
 /// Send + Sync + Clone handle to the blocking Repository thread.
@@ -68,6 +72,15 @@ impl RepoHandle {
                     }
                     RepoCmd::ExportBundle { hash_or_id, tx } => {
                         let _ = tx.send(repo.export_bundle(&hash_or_id));
+                    }
+                    RepoCmd::Annotate { document_text, style, threshold, tx } => {
+                        let _ = tx.send(repo.annotate(&document_text, style, threshold));
+                    }
+                    RepoCmd::Cite { document_text, threshold, tx } => {
+                        let _ = tx.send(repo.cite(&document_text, threshold));
+                    }
+                    RepoCmd::Doctor { document_text, threshold, tx } => {
+                        let _ = tx.send(repo.doctor(&document_text, threshold));
                     }
                 }
             }
@@ -124,5 +137,33 @@ impl RepoHandle {
     pub async fn export_bundle(&self, hash_or_id: String) -> Result<CrpBundle, StoreError> {
         let (tx, rx) = oneshot::channel();
         self.send(RepoCmd::ExportBundle { hash_or_id, tx }, rx).await
+    }
+
+    pub async fn annotate(
+        &self,
+        document_text: String,
+        style: AnnotationStyle,
+        threshold: f64,
+    ) -> Result<AnnotateResult, StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(RepoCmd::Annotate { document_text, style, threshold, tx }, rx).await
+    }
+
+    pub async fn cite(
+        &self,
+        document_text: String,
+        threshold: f64,
+    ) -> Result<Vec<Citation>, StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(RepoCmd::Cite { document_text, threshold, tx }, rx).await
+    }
+
+    pub async fn doctor(
+        &self,
+        document_text: String,
+        threshold: f64,
+    ) -> Result<DoctorResult, StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(RepoCmd::Doctor { document_text, threshold, tx }, rx).await
     }
 }

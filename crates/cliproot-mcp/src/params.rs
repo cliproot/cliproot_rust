@@ -112,3 +112,50 @@ pub struct ExportParams {
     /// Clip hash (sha256-...) or clip ID to export with its full provenance lineage
     pub hash_or_id: String,
 }
+
+// ── cliproot_annotate ─────────────────────────────────────────────────────
+
+/// Parameters for the cliproot_annotate tool.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct AnnotateParams {
+    /// The document text to annotate with citations
+    pub document_text: String,
+    /// Annotation style: "footnote" (default), "inline-comment", "bracket"
+    #[serde(default = "default_annotation_style")]
+    pub style: String,
+    /// Minimum match confidence threshold (0.0-1.0, default: 0.4)
+    #[serde(default = "default_threshold")]
+    pub threshold: f64,
+}
+
+fn default_annotation_style() -> String {
+    "footnote".to_string()
+}
+
+fn default_threshold() -> f64 {
+    0.4
+}
+
+// ── cliproot_cite ─────────────────────────────────────────────────────────
+
+/// Parameters for the cliproot_cite tool.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct CiteParams {
+    /// The document text to generate citations for
+    pub document_text: String,
+    /// Minimum match confidence threshold (0.0-1.0, default: 0.4)
+    #[serde(default = "default_threshold")]
+    pub threshold: f64,
+}
+
+// ── cliproot_doctor ───────────────────────────────────────────────────────
+
+/// Parameters for the cliproot_doctor tool.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct DoctorParams {
+    /// The document text to analyze for provenance coverage
+    pub document_text: String,
+    /// Minimum match confidence threshold (0.0-1.0, default: 0.4)
+    #[serde(default = "default_threshold")]
+    pub threshold: f64,
+}
