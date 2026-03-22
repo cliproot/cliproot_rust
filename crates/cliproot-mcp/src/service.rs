@@ -3,23 +3,20 @@
 use std::sync::Arc;
 
 use cliproot_core::{
-    create_clip_hash, create_text_hash,
-    hash::ClipHashInput,
-    matching::parse_annotation_style,
+    create_clip_hash, create_text_hash, hash::ClipHashInput, matching::parse_annotation_style,
     model::*,
 };
 use cliproot_store::StoreError;
 use rmcp::{
-    RoleServer, ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{
-        Annotated, CallToolResult, Content, ErrorData, Implementation,
-        ListResourceTemplatesResult, ListResourcesResult, PaginatedRequestParams,
-        RawResource, RawResourceTemplate, ReadResourceRequestParams,
-        ReadResourceResult, ResourceContents, ServerCapabilities, ServerInfo,
+        Annotated, CallToolResult, Content, ErrorData, Implementation, ListResourceTemplatesResult,
+        ListResourcesResult, PaginatedRequestParams, RawResource, RawResourceTemplate,
+        ReadResourceRequestParams, ReadResourceResult, ResourceContents, ServerCapabilities,
+        ServerInfo,
     },
     service::RequestContext,
-    tool, tool_handler, tool_router,
+    tool, tool_handler, tool_router, RoleServer, ServerHandler,
 };
 use serde_json::json;
 
@@ -38,9 +35,7 @@ pub(crate) fn ok_json(v: impl serde::Serialize) -> Result<CallToolResult, ErrorD
 
 pub(crate) fn store_err(e: StoreError) -> ErrorData {
     match e {
-        StoreError::NotFound => {
-            ErrorData::invalid_params("clip not found", None)
-        }
+        StoreError::NotFound => ErrorData::invalid_params("clip not found", None),
         StoreError::AlreadyExists(s) => {
             ErrorData::invalid_params(format!("already exists: {s}"), None)
         }
@@ -71,43 +66,67 @@ impl ClipRootService {
 
     /// Resolve a `cliproot://` URI and return serialised JSON.
     async fn read_resource_uri(&self, uri: &str) -> Result<String, String> {
-        let path = uri.strip_prefix("cliproot://").ok_or("invalid URI scheme")?;
+        let path = uri
+            .strip_prefix("cliproot://")
+            .ok_or("invalid URI scheme")?;
 
         if path == "clips" {
-            let clips = self.repo.list_clips(None, None, Some(200)).await
+            let clips = self
+                .repo
+                .list_clips(None, None, Some(200))
+                .await
                 .map_err(|e| e.to_string())?;
-            let summaries: Vec<serde_json::Value> = clips.iter().map(|c| {
-                let preview = c.content.as_deref().map(|s| {
-                    if s.len() > 200 { &s[..200] } else { s }
-                });
-                json!({
-                    "clipHash": c.clip_hash,
-                    "id": c.id,
-                    "documentId": c.document_id,
-                    "sourceRefs": c.source_refs,
-                    "content": preview,
+            let summaries: Vec<serde_json::Value> = clips
+                .iter()
+                .map(|c| {
+                    let preview =
+                        c.content
+                            .as_deref()
+                            .map(|s| if s.len() > 200 { &s[..200] } else { s });
+                    json!({
+                        "clipHash": c.clip_hash,
+                        "id": c.id,
+                        "documentId": c.document_id,
+                        "sourceRefs": c.source_refs,
+                        "content": preview,
+                    })
                 })
-            }).collect();
+                .collect();
             serde_json::to_string_pretty(&json!({
                 "clips": summaries, "count": summaries.len()
-            })).map_err(|e| e.to_string())
+            }))
+            .map_err(|e| e.to_string())
         } else if let Some(hash_or_id) = path.strip_prefix("clips/") {
-            let clip = self.repo.get_clip(hash_or_id.to_string()).await
+            let clip = self
+                .repo
+                .get_clip(hash_or_id.to_string())
+                .await
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| format!("clip not found: {hash_or_id}"))?;
             serde_json::to_string_pretty(&clip).map_err(|e| e.to_string())
         } else if let Some(hash_or_id) = path.strip_prefix("lineage/") {
-            let nodes = self.repo.trace(hash_or_id.to_string()).await
+            let nodes = self
+                .repo
+                .trace(hash_or_id.to_string())
+                .await
                 .map_err(|e| e.to_string())?;
-            let result: Vec<serde_json::Value> = nodes.iter().map(|n| json!({
-                "clipHash": n.clip_hash,
-                "parentHash": n.parent_hash,
-                "transformationType": n.transformation_type,
-                "depth": n.depth,
-            })).collect();
+            let result: Vec<serde_json::Value> = nodes
+                .iter()
+                .map(|n| {
+                    json!({
+                        "clipHash": n.clip_hash,
+                        "parentHash": n.parent_hash,
+                        "transformationType": n.transformation_type,
+                        "depth": n.depth,
+                    })
+                })
+                .collect();
             serde_json::to_string_pretty(&result).map_err(|e| e.to_string())
         } else if let Some(hash_or_id) = path.strip_prefix("bundles/") {
-            let bundle = self.repo.export_bundle(hash_or_id.to_string()).await
+            let bundle = self
+                .repo
+                .export_bundle(hash_or_id.to_string())
+                .await
                 .map_err(|e| e.to_string())?;
             serde_json::to_string_pretty(&bundle).map_err(|e| e.to_string())
         } else {
@@ -122,15 +141,17 @@ impl ClipRootService {
 impl ClipRootService {
     /// Capture a source clip: record a URL, exact quoted text, and source type into the
     /// Cliproot repository. Returns the content-addressed clip with its hash.
-    #[tool(description = "Capture a source clip from a URL with exact quoted text. Returns the stored clip including its content-addressed hash for future reference.")]
+    #[tool(
+        description = "Capture a source clip from a URL with exact quoted text. Returns the stored clip including its content-addressed hash for future reference."
+    )]
     async fn cliproot_clip(
         &self,
         Parameters(params): Parameters<ClipParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let source_type: SourceType = serde_json::from_value(
-            serde_json::Value::String(params.source_type),
-        )
-        .map_err(|e| ErrorData::invalid_params(format!("invalid source_type: {e}"), None))?;
+        let source_type: SourceType =
+            serde_json::from_value(serde_json::Value::String(params.source_type)).map_err(|e| {
+                ErrorData::invalid_params(format!("invalid source_type: {e}"), None)
+            })?;
 
         let source_id = format!("src-{}", uuid::Uuid::new_v4());
         let now = now_rfc3339();
@@ -195,7 +216,9 @@ impl ClipRootService {
 
     /// Derive a new clip from one or more parent clips, recording the transformation type
     /// and derivation edges. Returns the derived child clip with its hash.
-    #[tool(description = "Derive a new clip from one or more parent clips. Creates derivation edges recording how the content was transformed. Returns the child clip with its hash.")]
+    #[tool(
+        description = "Derive a new clip from one or more parent clips. Creates derivation edges recording how the content was transformed. Returns the child clip with its hash."
+    )]
     async fn cliproot_derive(
         &self,
         Parameters(params): Parameters<DeriveParams>,
@@ -203,11 +226,14 @@ impl ClipRootService {
         // Resolve parent hashes
         let mut parent_hashes = Vec::new();
         for ref_str in &params.from {
-            let h = self.repo.resolve_hash(ref_str.clone()).await.map_err(store_err)?
-                .ok_or_else(|| ErrorData::invalid_params(
-                    format!("parent clip not found: {ref_str}"),
-                    None,
-                ))?;
+            let h = self
+                .repo
+                .resolve_hash(ref_str.clone())
+                .await
+                .map_err(store_err)?
+                .ok_or_else(|| {
+                    ErrorData::invalid_params(format!("parent clip not found: {ref_str}"), None)
+                })?;
             parent_hashes.push(h);
         }
 
@@ -266,10 +292,9 @@ impl ClipRootService {
             created_by_activity_id: None,
         };
 
-        let transformation_type: TransformationType = serde_json::from_value(
-            serde_json::Value::String(params.transformation_type),
-        )
-        .unwrap_or(TransformationType::Unknown);
+        let transformation_type: TransformationType =
+            serde_json::from_value(serde_json::Value::String(params.transformation_type))
+                .unwrap_or(TransformationType::Unknown);
 
         let edges: Vec<DerivationEdge> = parent_hashes
             .iter()
@@ -305,12 +330,19 @@ impl ClipRootService {
 
     /// Inspect a clip by hash or ID and return its full details including content,
     /// selectors, source references, and hashes.
-    #[tool(description = "Inspect a clip by its hash (sha256-...) or ID. Returns full clip details including content, selectors, source refs, and hashes.")]
+    #[tool(
+        description = "Inspect a clip by its hash (sha256-...) or ID. Returns full clip details including content, selectors, source refs, and hashes."
+    )]
     async fn cliproot_inspect(
         &self,
         Parameters(params): Parameters<InspectParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        match self.repo.get_clip(params.hash_or_id.clone()).await.map_err(store_err)? {
+        match self
+            .repo
+            .get_clip(params.hash_or_id.clone())
+            .await
+            .map_err(store_err)?
+        {
             Some(clip) => ok_json(&clip),
             None => Err(ErrorData::invalid_params(
                 format!("clip not found: {}", params.hash_or_id),
@@ -321,26 +353,36 @@ impl ClipRootService {
 
     /// Show the full ancestor lineage of a clip through derivation edges.
     /// Returns nodes ordered from direct parents to root ancestors.
-    #[tool(description = "Show the full ancestor lineage of a clip through derivation edges. Returns an ordered list from direct parents to root ancestors, showing how content was derived.")]
+    #[tool(
+        description = "Show the full ancestor lineage of a clip through derivation edges. Returns an ordered list from direct parents to root ancestors, showing how content was derived."
+    )]
     async fn cliproot_trace(
         &self,
         Parameters(params): Parameters<TraceParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let nodes = self.repo.trace(params.hash_or_id).await.map_err(store_err)?;
+        let nodes = self
+            .repo
+            .trace(params.hash_or_id)
+            .await
+            .map_err(store_err)?;
         let result: Vec<serde_json::Value> = nodes
             .iter()
-            .map(|n| json!({
-                "clipHash": n.clip_hash,
-                "parentHash": n.parent_hash,
-                "transformationType": n.transformation_type,
-                "depth": n.depth,
-            }))
+            .map(|n| {
+                json!({
+                    "clipHash": n.clip_hash,
+                    "parentHash": n.parent_hash,
+                    "transformationType": n.transformation_type,
+                    "depth": n.depth,
+                })
+            })
             .collect();
         ok_json(&result)
     }
 
     /// Verify the hash integrity of a specific clip or all clips in the store.
-    #[tool(description = "Verify hash integrity of a clip (by hash or ID) or all clips if hash_or_id is omitted. Returns verification status and any errors found.")]
+    #[tool(
+        description = "Verify hash integrity of a clip (by hash or ID) or all clips if hash_or_id is omitted. Returns verification status and any errors found."
+    )]
     async fn cliproot_verify(
         &self,
         Parameters(params): Parameters<VerifyParams>,
@@ -348,11 +390,11 @@ impl ClipRootService {
         match params.hash_or_id {
             Some(id) => {
                 self.repo.verify_clip(id.clone()).await.map_err(store_err)?;
-                ok_json(&json!({ "status": "ok", "clipHashOrId": id }))
+                ok_json(json!({ "status": "ok", "clipHashOrId": id }))
             }
             None => {
                 let errors = self.repo.verify_all().await.map_err(store_err)?;
-                ok_json(&json!({
+                ok_json(json!({
                     "status": if errors.is_empty() { "ok" } else { "errors" },
                     "errorCount": errors.len(),
                     "errors": errors,
@@ -363,12 +405,15 @@ impl ClipRootService {
 
     /// List clips in the repository with optional filtering. Returns clip summaries
     /// with a 200-character content preview.
-    #[tool(description = "List clips in the repository with optional filtering by document ID or source type. Returns an array of clip summaries with content previews.")]
+    #[tool(
+        description = "List clips in the repository with optional filtering by document ID or source type. Returns an array of clip summaries with content previews."
+    )]
     async fn cliproot_list(
         &self,
         Parameters(params): Parameters<ListParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let clips = self.repo
+        let clips = self
+            .repo
             .list_clips(params.document_id, params.source_type, Some(params.limit))
             .await
             .map_err(store_err)?;
@@ -376,9 +421,10 @@ impl ClipRootService {
         let result: Vec<serde_json::Value> = clips
             .iter()
             .map(|c| {
-                let preview = c.content.as_deref().map(|s| {
-                    if s.len() > 200 { &s[..200] } else { s }
-                });
+                let preview = c
+                    .content
+                    .as_deref()
+                    .map(|s| if s.len() > 200 { &s[..200] } else { s });
                 json!({
                     "clipHash": c.clip_hash,
                     "id": c.id,
@@ -389,17 +435,20 @@ impl ClipRootService {
             })
             .collect();
 
-        ok_json(&json!({ "clips": result, "count": result.len() }))
+        ok_json(json!({ "clips": result, "count": result.len() }))
     }
 
     /// Search clip content using case-insensitive substring matching.
-    #[tool(description = "Search clips by text content using case-insensitive substring matching. Returns matching clips up to the specified limit.")]
+    #[tool(
+        description = "Search clips by text content using case-insensitive substring matching. Returns matching clips up to the specified limit."
+    )]
     async fn cliproot_search(
         &self,
         Parameters(params): Parameters<SearchParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let fetch_limit = (params.limit * 10).min(2000);
-        let clips = self.repo
+        let clips = self
+            .repo
             .list_clips(None, None, Some(fetch_limit))
             .await
             .map_err(store_err)?;
@@ -414,24 +463,29 @@ impl ClipRootService {
                     .unwrap_or(false)
             })
             .take(params.limit as usize)
-            .map(|c| json!({
-                "clipHash": c.clip_hash,
-                "id": c.id,
-                "content": c.content,
-                "sourceRefs": c.source_refs,
-            }))
+            .map(|c| {
+                json!({
+                    "clipHash": c.clip_hash,
+                    "id": c.id,
+                    "content": c.content,
+                    "sourceRefs": c.source_refs,
+                })
+            })
             .collect();
 
-        ok_json(&json!({ "results": matched, "count": matched.len() }))
+        ok_json(json!({ "results": matched, "count": matched.len() }))
     }
 
     /// Export a clip and its full provenance lineage as a CRP bundle JSON object.
-    #[tool(description = "Export a clip and its full provenance lineage as a CRP bundle. Useful for sharing or archiving provenance records.")]
+    #[tool(
+        description = "Export a clip and its full provenance lineage as a CRP bundle. Useful for sharing or archiving provenance records."
+    )]
     async fn cliproot_export(
         &self,
         Parameters(params): Parameters<ExportParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let bundle = self.repo
+        let bundle = self
+            .repo
             .export_bundle(params.hash_or_id)
             .await
             .map_err(store_err)?;
@@ -439,14 +493,17 @@ impl ClipRootService {
     }
 
     /// Annotate a document with inline citations by matching text against stored clips.
-    #[tool(description = "Annotate a document with inline citations by matching text against stored clips. Returns the annotated text with citation markers and a list of citations with source URLs.")]
+    #[tool(
+        description = "Annotate a document with inline citations by matching text against stored clips. Returns the annotated text with citation markers and a list of citations with source URLs."
+    )]
     async fn cliproot_annotate(
         &self,
         Parameters(params): Parameters<AnnotateParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let style = parse_annotation_style(&params.style)
             .map_err(|e| ErrorData::invalid_params(e, None))?;
-        let result = self.repo
+        let result = self
+            .repo
             .annotate(params.document_text, style, params.threshold)
             .await
             .map_err(store_err)?;
@@ -454,25 +511,31 @@ impl ClipRootService {
     }
 
     /// Generate a bibliography/citation list for a document from clip provenance.
-    #[tool(description = "Generate a bibliography/citation list for a document by matching text against stored clips. Returns numbered sources with URLs and titles.")]
+    #[tool(
+        description = "Generate a bibliography/citation list for a document by matching text against stored clips. Returns numbered sources with URLs and titles."
+    )]
     async fn cliproot_cite(
         &self,
         Parameters(params): Parameters<CiteParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let citations = self.repo
+        let citations = self
+            .repo
             .cite(params.document_text, params.threshold)
             .await
             .map_err(store_err)?;
-        ok_json(&json!({ "citations": citations, "count": citations.len() }))
+        ok_json(json!({ "citations": citations, "count": citations.len() }))
     }
 
     /// Generate a provenance coverage report for a document.
-    #[tool(description = "Generate a provenance coverage report showing which paragraphs in a document have source provenance and which are missing it. Useful for auditing AI-generated content.")]
+    #[tool(
+        description = "Generate a provenance coverage report showing which paragraphs in a document have source provenance and which are missing it. Useful for auditing AI-generated content."
+    )]
     async fn cliproot_doctor(
         &self,
         Parameters(params): Parameters<DoctorParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let report = self.repo
+        let report = self
+            .repo
             .doctor(params.document_text, params.threshold)
             .await
             .map_err(store_err)?;
@@ -491,9 +554,10 @@ impl ServerHandler for ClipRootService {
                 .enable_resources()
                 .build(),
         )
-        .with_server_info(
-            Implementation::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")),
-        )
+        .with_server_info(Implementation::new(
+            env!("CARGO_PKG_NAME"),
+            env!("CARGO_PKG_VERSION"),
+        ))
     }
 
     fn list_resources(
@@ -507,9 +571,7 @@ impl ServerHandler for ClipRootService {
                     uri: "cliproot://clips".into(),
                     name: "cliproot-clip-list".into(),
                     title: Some("All Clips".into()),
-                    description: Some(
-                        "Summary list of all clips in the repository".into(),
-                    ),
+                    description: Some("Summary list of all clips in the repository".into()),
                     mime_type: Some("application/json".into()),
                     size: None,
                     icons: None,
@@ -526,9 +588,8 @@ impl ServerHandler for ClipRootService {
         &self,
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
-    ) -> impl std::future::Future<Output = Result<ListResourceTemplatesResult, ErrorData>>
-           + Send
-           + '_ {
+    ) -> impl std::future::Future<Output = Result<ListResourceTemplatesResult, ErrorData>> + Send + '_
+    {
         std::future::ready(Ok(ListResourceTemplatesResult {
             resource_templates: vec![
                 Annotated::new(
@@ -536,9 +597,7 @@ impl ServerHandler for ClipRootService {
                         uri_template: "cliproot://clips/{hash_or_id}".into(),
                         name: "cliproot-clip".into(),
                         title: Some("Clip Details".into()),
-                        description: Some(
-                            "Full details of a clip by hash or ID".into(),
-                        ),
+                        description: Some("Full details of a clip by hash or ID".into()),
                         mime_type: Some("application/json".into()),
                         icons: None,
                     },
@@ -549,9 +608,7 @@ impl ServerHandler for ClipRootService {
                         uri_template: "cliproot://lineage/{hash_or_id}".into(),
                         name: "cliproot-lineage".into(),
                         title: Some("Clip Lineage".into()),
-                        description: Some(
-                            "Derivation lineage trace for a clip".into(),
-                        ),
+                        description: Some("Derivation lineage trace for a clip".into()),
                         mime_type: Some("application/json".into()),
                         icons: None,
                     },
@@ -576,21 +633,20 @@ impl ServerHandler for ClipRootService {
         }))
     }
 
-    fn read_resource(
+    async fn read_resource(
         &self,
         request: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> impl std::future::Future<Output = Result<ReadResourceResult, ErrorData>> + Send + '_ {
-        async move {
-            let uri = &request.uri;
-            let json_str = self
-                .read_resource_uri(uri)
-                .await
-                .map_err(|e| ErrorData::resource_not_found(e, None))?;
-            Ok(ReadResourceResult::new(vec![
-                ResourceContents::text(json_str, uri.clone())
-                    .with_mime_type("application/json"),
-            ]))
-        }
+    ) -> Result<ReadResourceResult, ErrorData> {
+        let uri = &request.uri;
+        let json_str = self
+            .read_resource_uri(uri)
+            .await
+            .map_err(|e| ErrorData::resource_not_found(e, None))?;
+        Ok(ReadResourceResult::new(vec![ResourceContents::text(
+            json_str,
+            uri.clone(),
+        )
+        .with_mime_type("application/json")]))
     }
 }

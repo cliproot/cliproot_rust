@@ -48,8 +48,11 @@ pub fn verify_bundle(bundle: &CrpBundle) -> Result<(), CoreError> {
     }
 
     // Check derivation edge references point to known clips
-    let clip_hashes: std::collections::HashSet<&str> =
-        bundle.clips.iter().map(|c| c.clip_hash.0.as_str()).collect();
+    let clip_hashes: std::collections::HashSet<&str> = bundle
+        .clips
+        .iter()
+        .map(|c| c.clip_hash.0.as_str())
+        .collect();
 
     for edge in &bundle.derivation_edges {
         if !clip_hashes.contains(edge.child_clip_hash.0.as_str()) {
@@ -122,7 +125,8 @@ mod tests {
     #[test]
     fn test_verify_tampered_clip_hash() {
         let mut clip = make_test_clip("Hello world", vec!["src_01".to_string()]);
-        clip.clip_hash = ContentHash("sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string());
+        clip.clip_hash =
+            ContentHash("sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string());
         assert!(verify_clip_hash(&clip).is_err());
     }
 }

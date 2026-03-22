@@ -26,11 +26,7 @@ pub fn run(
                     );
                 }
                 _ => {
-                    println!(
-                        "Exported {} clip(s) to {}",
-                        bundle.clips.len(),
-                        path
-                    );
+                    println!("Exported {} clip(s) to {}", bundle.clips.len(), path);
                 }
             }
         }

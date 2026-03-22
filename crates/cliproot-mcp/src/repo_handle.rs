@@ -7,26 +7,67 @@
 
 use cliproot_core::matching::{AnnotateResult, AnnotationStyle, Citation, DoctorResult};
 use cliproot_core::model::{Clip, CrpBundle};
-use cliproot_store::{Repository, StoreError};
 use cliproot_store::index_db::LineageNode;
+use cliproot_store::{Repository, StoreError};
 use tokio::sync::{mpsc, oneshot};
 
 type Tx<T> = oneshot::Sender<Result<T, StoreError>>;
 
 pub enum RepoCmd {
-    StoreBundle  { bundle: CrpBundle,              tx: Tx<String> },
-    GetClip      { hash_or_id: String,             tx: Tx<Option<Clip>> },
+    StoreBundle {
+        bundle: Box<CrpBundle>,
+        tx: Tx<String>,
+    },
+    GetClip {
+        hash_or_id: String,
+        tx: Tx<Option<Clip>>,
+    },
     #[allow(dead_code)]
-    GetClipFull  { hash_or_id: String,             tx: Tx<Option<Clip>> },
-    ResolveHash  { hash_or_id: String,             tx: Tx<Option<String>> },
-    ListClips    { document_id: Option<String>, source_type: Option<String>, limit: Option<u32>, tx: Tx<Vec<Clip>> },
-    Trace        { hash_or_id: String,             tx: Tx<Vec<LineageNode>> },
-    VerifyClip   { hash_or_id: String,             tx: Tx<()> },
-    VerifyAll    {                                  tx: Tx<Vec<String>> },
-    ExportBundle { hash_or_id: String,             tx: Tx<CrpBundle> },
-    Annotate     { document_text: String, style: AnnotationStyle, threshold: f64, tx: Tx<AnnotateResult> },
-    Cite         { document_text: String, threshold: f64,         tx: Tx<Vec<Citation>> },
-    Doctor       { document_text: String, threshold: f64,         tx: Tx<DoctorResult> },
+    GetClipFull {
+        hash_or_id: String,
+        tx: Tx<Option<Clip>>,
+    },
+    ResolveHash {
+        hash_or_id: String,
+        tx: Tx<Option<String>>,
+    },
+    ListClips {
+        document_id: Option<String>,
+        source_type: Option<String>,
+        limit: Option<u32>,
+        tx: Tx<Vec<Clip>>,
+    },
+    Trace {
+        hash_or_id: String,
+        tx: Tx<Vec<LineageNode>>,
+    },
+    VerifyClip {
+        hash_or_id: String,
+        tx: Tx<()>,
+    },
+    VerifyAll {
+        tx: Tx<Vec<String>>,
+    },
+    ExportBundle {
+        hash_or_id: String,
+        tx: Tx<CrpBundle>,
+    },
+    Annotate {
+        document_text: String,
+        style: AnnotationStyle,
+        threshold: f64,
+        tx: Tx<AnnotateResult>,
+    },
+    Cite {
+        document_text: String,
+        threshold: f64,
+        tx: Tx<Vec<Citation>>,
+    },
+    Doctor {
+        document_text: String,
+        threshold: f64,
+        tx: Tx<DoctorResult>,
+    },
 }
 
 /// Send + Sync + Clone handle to the blocking Repository thread.
@@ -54,7 +95,12 @@ impl RepoHandle {
                     RepoCmd::ResolveHash { hash_or_id, tx } => {
                         let _ = tx.send(repo.resolve_clip_hash(&hash_or_id));
                     }
-                    RepoCmd::ListClips { document_id, source_type, limit, tx } => {
+                    RepoCmd::ListClips {
+                        document_id,
+                        source_type,
+                        limit,
+                        tx,
+                    } => {
                         let _ = tx.send(repo.list_clips(
                             document_id.as_deref(),
                             source_type.as_deref(),
@@ -73,13 +119,26 @@ impl RepoHandle {
                     RepoCmd::ExportBundle { hash_or_id, tx } => {
                         let _ = tx.send(repo.export_bundle(&hash_or_id));
                     }
-                    RepoCmd::Annotate { document_text, style, threshold, tx } => {
+                    RepoCmd::Annotate {
+                        document_text,
+                        style,
+                        threshold,
+                        tx,
+                    } => {
                         let _ = tx.send(repo.annotate(&document_text, style, threshold));
                     }
-                    RepoCmd::Cite { document_text, threshold, tx } => {
+                    RepoCmd::Cite {
+                        document_text,
+                        threshold,
+                        tx,
+                    } => {
                         let _ = tx.send(repo.cite(&document_text, threshold));
                     }
-                    RepoCmd::Doctor { document_text, threshold, tx } => {
+                    RepoCmd::Doctor {
+                        document_text,
+                        threshold,
+                        tx,
+                    } => {
                         let _ = tx.send(repo.doctor(&document_text, threshold));
                     }
                 }
@@ -88,15 +147,29 @@ impl RepoHandle {
         Self { tx }
     }
 
-    async fn send<T>(&self, cmd: RepoCmd, rx: oneshot::Receiver<Result<T, StoreError>>) -> Result<T, StoreError> {
-        self.tx.send(cmd).await
+    async fn send<T>(
+        &self,
+        cmd: RepoCmd,
+        rx: oneshot::Receiver<Result<T, StoreError>>,
+    ) -> Result<T, StoreError> {
+        self.tx
+            .send(cmd)
+            .await
             .map_err(|_| StoreError::Other("repo thread gone".into()))?;
-        rx.await.map_err(|_| StoreError::Other("repo thread dropped response".into()))?
+        rx.await
+            .map_err(|_| StoreError::Other("repo thread dropped response".into()))?
     }
 
     pub async fn store_bundle(&self, bundle: CrpBundle) -> Result<String, StoreError> {
         let (tx, rx) = oneshot::channel();
-        self.send(RepoCmd::StoreBundle { bundle, tx }, rx).await
+        self.send(
+            RepoCmd::StoreBundle {
+                bundle: Box::new(bundle),
+                tx,
+            },
+            rx,
+        )
+        .await
     }
 
     pub async fn get_clip(&self, hash_or_id: String) -> Result<Option<Clip>, StoreError> {
@@ -116,7 +189,16 @@ impl RepoHandle {
         limit: Option<u32>,
     ) -> Result<Vec<Clip>, StoreError> {
         let (tx, rx) = oneshot::channel();
-        self.send(RepoCmd::ListClips { document_id, source_type, limit, tx }, rx).await
+        self.send(
+            RepoCmd::ListClips {
+                document_id,
+                source_type,
+                limit,
+                tx,
+            },
+            rx,
+        )
+        .await
     }
 
     pub async fn trace(&self, hash_or_id: String) -> Result<Vec<LineageNode>, StoreError> {
@@ -136,7 +218,8 @@ impl RepoHandle {
 
     pub async fn export_bundle(&self, hash_or_id: String) -> Result<CrpBundle, StoreError> {
         let (tx, rx) = oneshot::channel();
-        self.send(RepoCmd::ExportBundle { hash_or_id, tx }, rx).await
+        self.send(RepoCmd::ExportBundle { hash_or_id, tx }, rx)
+            .await
     }
 
     pub async fn annotate(
@@ -146,7 +229,16 @@ impl RepoHandle {
         threshold: f64,
     ) -> Result<AnnotateResult, StoreError> {
         let (tx, rx) = oneshot::channel();
-        self.send(RepoCmd::Annotate { document_text, style, threshold, tx }, rx).await
+        self.send(
+            RepoCmd::Annotate {
+                document_text,
+                style,
+                threshold,
+                tx,
+            },
+            rx,
+        )
+        .await
     }
 
     pub async fn cite(
@@ -155,7 +247,15 @@ impl RepoHandle {
         threshold: f64,
     ) -> Result<Vec<Citation>, StoreError> {
         let (tx, rx) = oneshot::channel();
-        self.send(RepoCmd::Cite { document_text, threshold, tx }, rx).await
+        self.send(
+            RepoCmd::Cite {
+                document_text,
+                threshold,
+                tx,
+            },
+            rx,
+        )
+        .await
     }
 
     pub async fn doctor(
@@ -164,6 +264,14 @@ impl RepoHandle {
         threshold: f64,
     ) -> Result<DoctorResult, StoreError> {
         let (tx, rx) = oneshot::channel();
-        self.send(RepoCmd::Doctor { document_text, threshold, tx }, rx).await
+        self.send(
+            RepoCmd::Doctor {
+                document_text,
+                threshold,
+                tx,
+            },
+            rx,
+        )
+        .await
     }
 }

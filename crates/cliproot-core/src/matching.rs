@@ -119,14 +119,12 @@ pub fn find_matches(
             }
 
             let confidence = compute_similarity(para_trimmed, &candidate.clip_content);
-            if confidence >= threshold {
-                if best.as_ref().map_or(true, |b| confidence > b.confidence) {
-                    best = Some(TextMatch {
-                        paragraph_index: para_idx,
-                        clip_hash: candidate.clip_hash.clone(),
-                        confidence,
-                    });
-                }
+            if confidence >= threshold && best.as_ref().is_none_or(|b| confidence > b.confidence) {
+                best = Some(TextMatch {
+                    paragraph_index: para_idx,
+                    clip_hash: candidate.clip_hash.clone(),
+                    confidence,
+                });
             }
         }
 
@@ -158,7 +156,9 @@ pub fn annotate_document(
     let para_to_citation: HashMap<usize, usize> = matches
         .iter()
         .filter_map(|m| {
-            hash_to_index.get(m.clip_hash.as_str()).map(|&idx| (m.paragraph_index, idx))
+            hash_to_index
+                .get(m.clip_hash.as_str())
+                .map(|&idx| (m.paragraph_index, idx))
         })
         .collect();
 
@@ -167,14 +167,14 @@ pub fn annotate_document(
     for (i, para) in paragraphs.iter().enumerate() {
         if let Some(&cite_idx) = para_to_citation.get(&i) {
             let marker = match &style {
-                AnnotationStyle::Footnote => format!("[{}]", cite_idx),
+                AnnotationStyle::Footnote => format!("[{cite_idx}]"),
                 AnnotationStyle::InlineComment => {
                     let clip_hash = matches
                         .iter()
                         .find(|m| m.paragraph_index == i)
                         .map(|m| m.clip_hash.as_str())
                         .unwrap_or("");
-                    format!("<!-- cliproot:{} -->", clip_hash)
+                    format!("<!-- cliproot:{clip_hash} -->")
                 }
                 AnnotationStyle::Bracket => {
                     let clip_hash = matches
@@ -182,12 +182,12 @@ pub fn annotate_document(
                         .find(|m| m.paragraph_index == i)
                         .map(|m| m.clip_hash.as_str())
                         .unwrap_or("");
-                    format!("[cliproot:{}]", clip_hash)
+                    format!("[cliproot:{clip_hash}]")
                 }
             };
 
             let trimmed = para.trim_end();
-            annotated_paragraphs.push(format!("{} {}", trimmed, marker));
+            annotated_paragraphs.push(format!("{trimmed} {marker}"));
         } else {
             annotated_paragraphs.push(para.to_string());
         }
@@ -219,10 +219,7 @@ pub fn annotate_document(
 /// Generate deduplicated citations from matches.
 ///
 /// Each unique clip_hash gets one citation number (1-based).
-pub fn generate_citations(
-    matches: &[TextMatch],
-    candidates: &[MatchCandidate],
-) -> Vec<Citation> {
+pub fn generate_citations(matches: &[TextMatch], candidates: &[MatchCandidate]) -> Vec<Citation> {
     let candidate_map: HashMap<&str, &MatchCandidate> = candidates
         .iter()
         .map(|c| (c.clip_hash.as_str(), c))
@@ -499,9 +496,10 @@ mod tests {
         )];
         let doc = "Redis uses a single-threaded event loop which simplifies concurrency.";
         let matches = find_matches(doc, &candidates, 0.4);
-        let result =
-            annotate_document(doc, &matches, &candidates, AnnotationStyle::InlineComment);
-        assert!(result.annotated_text.contains("<!-- cliproot:sha256-abc -->"));
+        let result = annotate_document(doc, &matches, &candidates, AnnotationStyle::InlineComment);
+        assert!(result
+            .annotated_text
+            .contains("<!-- cliproot:sha256-abc -->"));
     }
 
     #[test]

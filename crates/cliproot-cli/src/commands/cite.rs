@@ -22,14 +22,8 @@ pub fn run(
             } else {
                 println!("Citations\n");
                 for c in &citations {
-                    let title = c
-                        .source_title
-                        .as_deref()
-                        .unwrap_or("Untitled");
-                    let url = c
-                        .source_url
-                        .as_deref()
-                        .unwrap_or("(no URL)");
+                    let title = c.source_title.as_deref().unwrap_or("Untitled");
+                    let url = c.source_url.as_deref().unwrap_or("(no URL)");
                     println!("[{}] {} — {}", c.index, title, url);
                 }
             }

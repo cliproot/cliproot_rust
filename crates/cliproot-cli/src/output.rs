@@ -16,11 +16,7 @@ pub fn print_clip(clip: &Clip, format: &OutputFormat) {
                 println!("{}: {}", "Document".bold(), doc);
             }
             println!("{}: {}", "Text Hash".bold(), clip.text_hash);
-            println!(
-                "{}: {:?}",
-                "Sources".bold(),
-                clip.source_refs
-            );
+            println!("{}: {:?}", "Sources".bold(), clip.source_refs);
             if let Some(content) = &clip.content {
                 let preview = if content.len() > 80 {
                     format!("{}...", &content[..80])
@@ -52,7 +48,7 @@ pub fn print_clip_row(clip: &Clip, format: &OutputFormat) {
                     }
                 })
                 .unwrap_or_default();
-            println!("{:<22} {:<16} {}", hash_short, id, content_preview);
+            println!("{hash_short:<22} {id:<16} {content_preview}");
         }
         OutputFormat::Text => {
             let hash_short = &clip.clip_hash.0[..std::cmp::min(30, clip.clip_hash.0.len())];

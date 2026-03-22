@@ -29,9 +29,7 @@ pub fn run(
 
             for p in &report.paragraph_reports {
                 let (icon, label) = match p.status {
-                    CoverageStatus::Covered => {
-                        ("✓".green().to_string(), "covered".to_string())
-                    }
+                    CoverageStatus::Covered => ("✓".green().to_string(), "covered".to_string()),
                     CoverageStatus::Uncovered => {
                         ("✗".red().to_string(), "missing source".to_string())
                     }

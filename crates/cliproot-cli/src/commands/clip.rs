@@ -1,8 +1,4 @@
-use cliproot_core::{
-    create_clip_hash, create_text_hash,
-    hash::ClipHashInput,
-    model::*,
-};
+use cliproot_core::{create_clip_hash, create_text_hash, hash::ClipHashInput, model::*};
 use cliproot_store::Repository;
 
 use crate::output::print_clip;
@@ -19,9 +15,8 @@ pub fn run(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let repo = Repository::discover()?;
 
-    let source_type: SourceType = serde_json::from_value(
-        serde_json::Value::String(source_type_str.to_string()),
-    )?;
+    let source_type: SourceType =
+        serde_json::from_value(serde_json::Value::String(source_type_str.to_string()))?;
 
     let source_id = format!("src-{}", uuid::Uuid::new_v4());
     let source = SourceRecord {
@@ -43,8 +38,8 @@ pub fn run(
 
     let clip = Clip {
         clip_hash: clip_hash.clone(),
-        id: id.map(|s| CrpId(s)),
-        document_id: document_id.map(|s| CrpId(s)),
+        id: id.map(CrpId),
+        document_id: document_id.map(CrpId),
         source_refs: vec![source_id],
         selectors: Some(Selectors {
             text_position: None,

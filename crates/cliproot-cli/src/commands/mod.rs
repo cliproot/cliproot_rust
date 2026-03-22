@@ -8,5 +8,6 @@ pub mod ingest;
 pub mod init;
 pub mod inspect;
 pub mod list;
+pub mod mcp;
 pub mod trace;
 pub mod verify;

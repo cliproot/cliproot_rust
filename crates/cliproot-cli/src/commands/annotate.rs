@@ -12,8 +12,7 @@ pub fn run(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let repo = Repository::discover()?;
     let document_text = std::fs::read_to_string(file)?;
-    let style = parse_annotation_style(style)
-        .map_err(|e| format!("invalid --style: {e}"))?;
+    let style = parse_annotation_style(style).map_err(|e| format!("invalid --style: {e}"))?;
 
     let result = repo.annotate(&document_text, style, threshold)?;
 

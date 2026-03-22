@@ -9,7 +9,7 @@
 //!   CLIPROOT_REPO=/some/dir        # alternative to --path
 
 use cliproot_store::Repository;
-use rmcp::{ServiceExt, transport::io::stdio};
+use rmcp::{transport::io::stdio, ServiceExt};
 
 mod params;
 mod repo_handle;
@@ -22,10 +22,8 @@ fn parse_path() -> Option<std::path::PathBuf> {
     let args: Vec<String> = std::env::args().collect();
     let mut i = 1;
     while i < args.len() {
-        if args[i] == "--path" || args[i] == "-p" {
-            if i + 1 < args.len() {
-                return Some(std::path::PathBuf::from(&args[i + 1]));
-            }
+        if (args[i] == "--path" || args[i] == "-p") && i + 1 < args.len() {
+            return Some(std::path::PathBuf::from(&args[i + 1]));
         }
         i += 1;
     }

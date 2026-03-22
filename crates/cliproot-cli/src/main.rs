@@ -11,7 +11,10 @@ pub enum OutputFormat {
 }
 
 #[derive(Parser)]
-#[command(name = "cliproot", about = "Local-first provenance engine for content-addressed clips")]
+#[command(
+    name = "cliproot",
+    about = "Local-first provenance engine for content-addressed clips"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -158,6 +161,13 @@ enum Commands {
         #[arg(long, default_value = "0.4")]
         threshold: f64,
     },
+
+    /// Start the MCP stdio server for AI agents
+    Mcp {
+        /// Path to .cliproot/ repository (defaults to CLIPROOT_REPO or CWD discovery)
+        #[arg(long, short)]
+        path: Option<String>,
+    },
 }
 
 fn main() {
@@ -172,19 +182,23 @@ fn main() {
             id,
             document_id,
             title,
-        } => commands::clip::run(&url, &quote, &source_type, id, document_id, title, &cli.format),
+        } => commands::clip::run(
+            &url,
+            &quote,
+            &source_type,
+            id,
+            document_id,
+            title,
+            &cli.format,
+        ),
         Commands::Derive {
             from,
             quote,
             activity_type,
             agent,
         } => commands::derive::run(&from, &quote, &activity_type, agent.as_deref(), &cli.format),
-        Commands::Inspect { hash_or_id } => {
-            commands::inspect::run(&hash_or_id, &cli.format)
-        }
-        Commands::Trace { hash_or_id } => {
-            commands::trace::run(&hash_or_id, &cli.format)
-        }
+        Commands::Inspect { hash_or_id } => commands::inspect::run(&hash_or_id, &cli.format),
+        Commands::Trace { hash_or_id } => commands::trace::run(&hash_or_id, &cli.format),
         Commands::Verify { hash_or_id } => {
             commands::verify::run(hash_or_id.as_deref(), &cli.format)
         }
@@ -208,12 +222,11 @@ fn main() {
             in_place,
             threshold,
         } => commands::annotate::run(&file, &style, in_place, threshold, &cli.format),
-        Commands::Cite { file, threshold } => {
-            commands::cite::run(&file, threshold, &cli.format)
-        }
+        Commands::Cite { file, threshold } => commands::cite::run(&file, threshold, &cli.format),
         Commands::Doctor { file, threshold } => {
             commands::doctor::run(&file, threshold, &cli.format)
         }
+        Commands::Mcp { path } => commands::mcp::run(path.as_deref()),
     };
 
     if let Err(e) = result {

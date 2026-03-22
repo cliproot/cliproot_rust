@@ -187,7 +187,8 @@ fn test_verify_all() {
 
 #[test]
 fn test_example_bundle_deserialization() {
-    let json = include_str!("../../../../cliproot/schema/examples/crp-v0.0.2.document.example.json");
+    let json =
+        include_str!("../../../../cliproot/schema/examples/crp-v0.0.2.document.example.json");
     let bundle: CrpBundle = serde_json::from_str(json).unwrap();
     assert_eq!(bundle.protocol_version, "0.0.2");
     assert_eq!(bundle.clips.len(), 2);

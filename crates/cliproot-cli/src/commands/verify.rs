@@ -39,20 +39,12 @@ pub fn run(
                 }
                 _ => {
                     if errors.is_empty() {
-                        println!(
-                            "{} All {} clips verified",
-                            "OK".green().bold(),
-                            clips.len()
-                        );
+                        println!("{} All {} clips verified", "OK".green().bold(), clips.len());
                     } else {
                         for e in &errors {
                             println!("{} {e}", "FAIL".red().bold());
                         }
-                        println!(
-                            "{}/{} clips have errors",
-                            errors.len(),
-                            clips.len()
-                        );
+                        println!("{}/{} clips have errors", errors.len(), clips.len());
                     }
                 }
             }

@@ -27,6 +27,13 @@ schemars = "1.0"
 # workspace crates
 cliproot-core = { path = "crates/cliproot-core" }
 cliproot-store = { path = "crates/cliproot-store" }
+cliproot-mcp = { path = "crates/cliproot-mcp" }
 
 # Workspace-level integration tests need a virtual member with dev-deps.
 # Move integration tests into cliproot-store instead.
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+codegen-units = 1

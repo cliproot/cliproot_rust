@@ -2,9 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use cliproot_core::{
-    matching::{
-        self, AnnotateResult, AnnotationStyle, Citation, DoctorResult, MatchCandidate,
-    },
+    matching::{self, AnnotateResult, AnnotationStyle, Citation, DoctorResult, MatchCandidate},
     model::*,
     verify::{verify_clip_hash, verify_text_hash},
 };
@@ -136,7 +134,7 @@ impl Repository {
 
     /// Resolve a hash-or-id to a clip hash.
     pub fn resolve_clip_hash(&self, hash_or_id: &str) -> Result<Option<String>, StoreError> {
-        if let Some(_) = self.index.find_clip_by_hash(hash_or_id)? {
+        if self.index.find_clip_by_hash(hash_or_id)?.is_some() {
             return Ok(Some(hash_or_id.to_string()));
         }
         if let Some(row) = self.index.find_clip_by_id(hash_or_id)? {

@@ -35,8 +35,9 @@ impl CrpId {
     pub fn validate(s: &str) -> Result<Self, CoreError> {
         if !s.is_empty()
             && s.len() <= 128
-            && s.bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'_' || b == b':' || b == b'-')
+            && s.bytes().all(|b| {
+                b.is_ascii_alphanumeric() || b == b'.' || b == b'_' || b == b':' || b == b'-'
+            })
         {
             Ok(CrpId(s.to_string()))
         } else {

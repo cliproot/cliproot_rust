@@ -107,7 +107,9 @@ impl IndexDb {
                 "INSERT OR REPLACE INTO agents (id, agent_type, name, uri) VALUES (?1, ?2, ?3, ?4)",
                 params![
                     agent.id.0,
-                    serde_json::to_value(&agent.agent_type)?.as_str().unwrap_or(""),
+                    serde_json::to_value(&agent.agent_type)?
+                        .as_str()
+                        .unwrap_or(""),
                     agent.name,
                     agent.uri,
                 ],
@@ -346,8 +348,8 @@ impl IndexDb {
                 let source_refs = self.get_source_refs(clip_hash)?;
                 Ok(Some(Clip {
                     clip_hash: cliproot_core::ContentHash(row.clip_hash),
-                    id: row.id.map(|s| cliproot_core::CrpId(s)),
-                    document_id: row.document_id.map(|s| cliproot_core::CrpId(s)),
+                    id: row.id.map(cliproot_core::CrpId),
+                    document_id: row.document_id.map(cliproot_core::CrpId),
                     source_refs,
                     selectors: None, // selectors not stored in index
                     content: row.content,
@@ -366,11 +368,11 @@ impl IndexDb {
                 id: cliproot_core::CrpId(e.id),
                 child_clip_hash: cliproot_core::ContentHash(e.child_clip_hash),
                 parent_clip_hash: cliproot_core::ContentHash(e.parent_clip_hash),
-                transformation_type: serde_json::from_value(
-                    serde_json::Value::String(e.transformation_type),
-                )
+                transformation_type: serde_json::from_value(serde_json::Value::String(
+                    e.transformation_type,
+                ))
                 .unwrap_or(cliproot_core::TransformationType::Unknown),
-                agent_id: e.agent_id.map(|s| cliproot_core::CrpId(s)),
+                agent_id: e.agent_id.map(cliproot_core::CrpId),
                 confidence: e.confidence,
                 created_at: e.created_at,
             })
@@ -378,9 +380,9 @@ impl IndexDb {
     }
 
     pub fn get_source_by_id(&self, source_id: &str) -> Result<Option<SourceRow>, StoreError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, source_type, title, source_uri FROM sources WHERE id = ?1",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, source_type, title, source_uri FROM sources WHERE id = ?1")?;
         let mut rows = stmt.query_map(params![source_id], |row| {
             Ok(SourceRow {
                 id: row.get(0)?,

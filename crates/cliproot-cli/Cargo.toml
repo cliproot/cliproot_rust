@@ -17,3 +17,5 @@ clap = { workspace = true }
 colored = { workspace = true }
 uuid = { workspace = true }
 thiserror = { workspace = true }
+cliproot-mcp = { workspace = true }
+tokio = { workspace = true }

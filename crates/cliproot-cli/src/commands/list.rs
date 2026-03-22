@@ -13,7 +13,7 @@ pub fn run(
     let clips = repo.list_clips(document, source_type, Some(limit))?;
 
     if matches!(format, OutputFormat::Table) {
-        println!("{:<22} {:<16} {}", "HASH", "ID", "CONTENT");
+        println!("{:<22} {:<16} CONTENT", "HASH", "ID");
         println!("{}", "-".repeat(80));
     }
 

@@ -1,8 +1,4 @@
-use cliproot_core::{
-    create_clip_hash, create_text_hash,
-    hash::ClipHashInput,
-    model::*,
-};
+use cliproot_core::{create_clip_hash, create_text_hash, hash::ClipHashInput, model::*};
 use cliproot_store::Repository;
 
 use crate::output::print_clip;
@@ -82,10 +78,9 @@ pub fn run(
     };
 
     // Parse transformation type from activity type
-    let transformation_type: TransformationType = serde_json::from_value(
-        serde_json::Value::String(activity_type_str.to_string()),
-    )
-    .unwrap_or(TransformationType::Unknown);
+    let transformation_type: TransformationType =
+        serde_json::from_value(serde_json::Value::String(activity_type_str.to_string()))
+            .unwrap_or(TransformationType::Unknown);
 
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
