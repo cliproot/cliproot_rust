@@ -20,6 +20,9 @@ colored = "2"
 uuid = { version = ">=1, <1.16", features = ["v4"] }
 unicode-normalization = "0.1"
 tempfile = ">=3, <3.19"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+rmcp = { version = "1.2", features = ["server", "transport-io"] }
+schemars = "1.0"
 
 # workspace crates
 cliproot-core = { path = "crates/cliproot-core" }

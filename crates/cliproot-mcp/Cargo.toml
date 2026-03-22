@@ -3,6 +3,20 @@ name = "cliproot-mcp"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "cliproot-mcp"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
 [dependencies]
-cliproot-core = { workspace = true }
+cliproot-core  = { workspace = true }
 cliproot-store = { workspace = true }
+tokio          = { workspace = true }
+rmcp           = { workspace = true }
+schemars       = { workspace = true }
+serde          = { workspace = true }
+serde_json     = { workspace = true }
+chrono         = { workspace = true }
+uuid           = { workspace = true }

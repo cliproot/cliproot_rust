@@ -20,7 +20,7 @@ cliproot_rust/
 │   ├── cliproot-core/      # protocol model, hashing, verification
 │   ├── cliproot-store/     # hybrid storage: files + SQLite index
 │   ├── cliproot-cli/       # clap-based CLI binary (cliproot)
-│   └── cliproot-mcp/       # stub — Phase 2 MCP server
+│   └── cliproot-mcp/       # stdio MCP server (cliproot-mcp)
 └── crates/cliproot-store/tests/
     └── roundtrip.rs        # integration tests
 ```
@@ -29,7 +29,7 @@ cliproot_rust/
 
 ## Requirements
 
-- Rust 1.82+ (stable)
+- Rust 1.85+ (stable) — required by `rmcp` 1.2 (Rust 2024 edition)
 - No system SQLite needed — `rusqlite` bundles SQLite via the `bundled` feature
 
 ## Build
@@ -41,13 +41,15 @@ cd cliproot_rust
 cargo check --workspace
 
 # Build the CLI binary
-cargo build -p cliproot-cli
-
-# Build release binary
 cargo build -p cliproot-cli --release
+
+# Build the MCP server binary
+cargo build -p cliproot-mcp --release
 ```
 
-The binary is at `target/debug/cliproot` (or `target/release/cliproot`).
+Binaries land in `target/release/`:
+- `target/release/cliproot` — CLI
+- `target/release/cliproot-mcp` — MCP server
 
 ## Test
 
@@ -65,11 +67,67 @@ cargo test -p cliproot-store
 cargo test --workspace -- --nocapture
 ```
 
-## Usage
+## MCP Server (`cliproot-mcp`)
+
+`cliproot-mcp` is a stdio MCP server that exposes Cliproot provenance operations as typed tools for AI agents (Claude Code, Cline, etc.). The MCP client spawns the process and communicates over stdin/stdout using JSON-RPC 2.0.
+
+### Available MCP tools
+
+| Tool | Description |
+|------|-------------|
+| `cliproot_clip` | Capture a source clip from a URL with exact quoted text |
+| `cliproot_derive` | Derive a new clip from one or more parent clips |
+| `cliproot_inspect` | Inspect a clip by hash or ID |
+| `cliproot_trace` | Show full ancestor lineage through derivation edges |
+| `cliproot_verify` | Verify hash integrity of one clip or all clips |
+| `cliproot_list` | List clips with optional filtering |
+| `cliproot_search` | Search clip content by substring |
+| `cliproot_export` | Export a clip and its full provenance lineage as a CRP bundle |
+
+### Register with Claude Code
+
+```bash
+# Scoped to the current project (recommended)
+claude mcp add cliproot -- /path/to/target/release/cliproot-mcp --path /path/to/project
+
+# Using CLIPROOT_REPO environment variable instead of --path
+claude mcp add cliproot -e CLIPROOT_REPO=/path/to/project -- /path/to/target/release/cliproot-mcp
+```
+
+The server discovers the `.cliproot/` repository by walking up from the `--path` argument (or `CLIPROOT_REPO`). If neither is provided it walks up from the working directory at startup.
+
+### Verify the server is running
+
+```bash
+claude mcp list
+# cliproot: /path/to/cliproot-mcp ... ✓ Connected
+```
+
+### Manual smoke test
+
+```bash
+BINARY=./target/release/cliproot-mcp
+REPO=/path/to/project   # directory containing .cliproot/
+
+# Initialize request
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}' \
+  | "$BINARY" --path "$REPO"
+
+# List available tools
+(printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}\n'; \
+ sleep 0.2; \
+ printf '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}\n'; \
+ sleep 1) \
+  | "$BINARY" --path "$REPO"
+```
+
+---
+
+## CLI Usage
 
 All commands accept `--format <text|json|table>` (default: `text`).
 
-### Initialize a repository
+### Initialize a repository (CLI)
 
 ```bash
 mkdir my-project && cd my-project
