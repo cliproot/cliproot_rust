@@ -1,5 +1,6 @@
 mod commands;
 mod output;
+mod skills;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
@@ -27,7 +28,11 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Create a .cliproot/ repository in the current directory
-    Init,
+    Init {
+        /// Also generate agent/IDE configuration files (MCP configs, skills, rules)
+        #[arg(long)]
+        agent: bool,
+    },
 
     /// Create a source record + clip from a URL
     Clip {
@@ -174,7 +179,7 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Init => commands::init::run(),
+        Commands::Init { agent } => commands::init::run(agent),
         Commands::Clip {
             url,
             quote,

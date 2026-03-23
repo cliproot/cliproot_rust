@@ -20,6 +20,12 @@ cliproot_rust/
 ├── .github/workflows/
 │   ├── ci.yml              # fmt + clippy + test on push/PR
 │   └── release.yml         # multi-platform binary release on tag
+├── skills/
+│   └── cliproot-research/  # Agent Skills package (embedded into binary)
+│       ├── SKILL.md        # core research workflow (agentskills.io format)
+│       ├── references/     # tool API docs + workflow examples
+│       ├── scripts/        # verify-provenance.sh helper
+│       └── agents/         # openai.yaml for Codex
 ├── crates/
 │   ├── cliproot-core/      # protocol model, hashing, verification
 │   ├── cliproot-store/     # hybrid storage: files + SQLite index
@@ -116,6 +122,32 @@ The standalone `cliproot-mcp` binary is also still available for backward compat
 | `cliproot_cite` | Generate a bibliography/citation list for a document from clip provenance |
 | `cliproot_doctor` | Generate a provenance coverage report showing which paragraphs have source provenance |
 
+### Agent Skills
+
+Cliproot ships a ready-made **[Agent Skills](https://agentskills.io)** package that teaches AI agents how to use the MCP tools effectively for provenance-tracked research. The skill is compatible with Claude Code, Cursor, VS Code/Copilot, OpenAI Codex, Windsurf, Gemini CLI, and any other Agent Skills-compliant tool.
+
+Generate all platform configs in one command:
+
+```bash
+cliproot init --agent
+```
+
+This creates:
+
+| Platform | Files generated |
+|----------|----------------|
+| **Claude Code** | `.mcp.json`, `.claude/skills/cliproot-research/` |
+| **Cursor** | `.cursor/mcp.json`, `.cursor/rules/cliproot-research.mdc` |
+| **VS Code / Copilot** | `.vscode/mcp.json` |
+| **Universal (Codex, Gemini CLI, etc.)** | `.agents/skills/cliproot-research/` |
+| **Windsurf** | `.windsurf/rules/cliproot-research.md` |
+
+The skill teaches agents to follow the **CAPTURE → SYNTHESIZE → VALIDATE → OUTPUT** workflow: clip sources, derive insights, verify integrity, and produce cited documents with traceable lineage.
+
+Skill source files live in [`skills/cliproot-research/`](skills/cliproot-research/) and are embedded in the binary at build time.
+
+---
+
 ### Register with Claude Code
 
 ```bash
@@ -199,6 +231,9 @@ All commands accept `--format <text|json|table>` (default: `text`).
 mkdir my-project && cd my-project
 cliproot init
 # → creates .cliproot/ in the current directory
+
+# Also generate agent/IDE config files (MCP configs, skills, rules)
+cliproot init --agent
 ```
 
 ### Create a clip from a URL

@@ -19,3 +19,6 @@ uuid = { workspace = true }
 thiserror = { workspace = true }
 cliproot-mcp = { workspace = true }
 tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
