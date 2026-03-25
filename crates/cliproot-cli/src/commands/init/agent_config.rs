@@ -38,10 +38,7 @@ pub fn generate_all(root: &Path) -> Result<Vec<ConfigAction>, Box<dyn std::error
 
     // Claude Code
     actions.push(upsert_mcp_json(root, ".mcp.json", "mcpServers")?);
-    actions.extend(write_skill_dir(
-        root,
-        ".claude/skills/cliproot-research",
-    )?);
+    actions.extend(write_skill_dir(root, ".claude/skills/cliproot-research")?);
 
     // Cursor
     actions.push(upsert_mcp_json(root, ".cursor/mcp.json", "mcpServers")?);
@@ -51,10 +48,7 @@ pub fn generate_all(root: &Path) -> Result<Vec<ConfigAction>, Box<dyn std::error
     actions.push(upsert_mcp_json(root, ".vscode/mcp.json", "servers")?);
 
     // Universal Agent Skills (Codex, Gemini CLI, Junie, Goose, etc.)
-    actions.extend(write_skill_dir(
-        root,
-        ".agents/skills/cliproot-research",
-    )?);
+    actions.extend(write_skill_dir(root, ".agents/skills/cliproot-research")?);
     actions.push(write_codex_yaml(root)?);
 
     // Windsurf
@@ -159,18 +153,12 @@ fn write_cursor_rule(root: &Path) -> Result<ConfigAction, Box<dyn std::error::Er
          ---\n\
          {body}"
     );
-    write_file(
-        root.join(".cursor/rules/cliproot-research.mdc"),
-        &content,
-    )
+    write_file(root.join(".cursor/rules/cliproot-research.mdc"), &content)
 }
 
 fn write_windsurf_rule(root: &Path) -> Result<ConfigAction, Box<dyn std::error::Error>> {
     let body = strip_yaml_frontmatter(skills::SKILL_MD);
-    write_file(
-        root.join(".windsurf/rules/cliproot-research.md"),
-        body,
-    )
+    write_file(root.join(".windsurf/rules/cliproot-research.md"), body)
 }
 
 fn write_codex_yaml(root: &Path) -> Result<ConfigAction, Box<dyn std::error::Error>> {
@@ -221,14 +209,8 @@ mod tests {
         let content: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(dir.path().join(".mcp.json")).unwrap())
                 .unwrap();
-        assert_eq!(
-            content["mcpServers"]["cliproot"]["command"],
-            "cliproot"
-        );
-        assert_eq!(
-            content["mcpServers"]["cliproot"]["args"][0],
-            "mcp"
-        );
+        assert_eq!(content["mcpServers"]["cliproot"]["command"], "cliproot");
+        assert_eq!(content["mcpServers"]["cliproot"]["args"][0], "mcp");
     }
 
     #[test]
@@ -247,15 +229,9 @@ mod tests {
         let content: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         // Original server preserved
-        assert_eq!(
-            content["mcpServers"]["other-server"]["command"],
-            "other"
-        );
+        assert_eq!(content["mcpServers"]["other-server"]["command"], "other");
         // Cliproot added
-        assert_eq!(
-            content["mcpServers"]["cliproot"]["command"],
-            "cliproot"
-        );
+        assert_eq!(content["mcpServers"]["cliproot"]["command"], "cliproot");
     }
 
     #[test]
@@ -278,10 +254,9 @@ mod tests {
         fs::create_dir_all(dir.path().join(".vscode")).unwrap();
         upsert_mcp_json(dir.path(), ".vscode/mcp.json", "servers").unwrap();
 
-        let content: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(dir.path().join(".vscode/mcp.json")).unwrap(),
-        )
-        .unwrap();
+        let content: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(dir.path().join(".vscode/mcp.json")).unwrap())
+                .unwrap();
         assert_eq!(content["servers"]["cliproot"]["command"], "cliproot");
         // Should NOT have mcpServers key
         assert!(content.get("mcpServers").is_none());

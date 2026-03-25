@@ -76,6 +76,23 @@ cargo build -p cliproot-cli --release
 
 The binary lands at `target/release/cliproot`.
 
+## Code Quality
+
+These match the checks run in CI (`ci.yml`) on every push and PR.
+
+```bash
+# Auto-fix formatting (run this before committing)
+cargo fmt --all
+
+# Check formatting without modifying files (what CI runs)
+cargo fmt --all -- --check
+
+# Lint — must pass with zero warnings
+cargo clippy --workspace -- -D warnings
+```
+
+> If `cargo fmt --all -- --check` fails in CI, run `cargo fmt --all` locally, commit the result, and push.
+
 ## Test
 
 ```bash

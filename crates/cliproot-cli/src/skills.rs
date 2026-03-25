@@ -10,5 +10,4 @@ pub const WORKFLOW_EXAMPLES_MD: &str =
     include_str!("../../../skills/cliproot-research/references/workflow-examples.md");
 pub const VERIFY_SCRIPT: &str =
     include_str!("../../../skills/cliproot-research/scripts/verify-provenance.sh");
-pub const OPENAI_YAML: &str =
-    include_str!("../../../skills/cliproot-research/agents/openai.yaml");
+pub const OPENAI_YAML: &str = include_str!("../../../skills/cliproot-research/agents/openai.yaml");
