@@ -18,6 +18,7 @@ colored = { workspace = true }
 uuid = { workspace = true }
 thiserror = { workspace = true }
 cliproot-mcp = { workspace = true }
+cliproot-clipboard = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]

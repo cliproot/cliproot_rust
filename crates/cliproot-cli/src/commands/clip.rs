@@ -1,3 +1,4 @@
+use cliproot_clipboard::ClipboardWriter;
 use cliproot_core::{create_clip_hash, create_text_hash, hash::ClipHashInput, model::*};
 use cliproot_store::Repository;
 
@@ -11,6 +12,7 @@ pub fn run(
     id: Option<String>,
     document_id: Option<String>,
     title: Option<String>,
+    copy: bool,
     format: &OutputFormat,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let repo = Repository::discover()?;
@@ -76,6 +78,13 @@ pub fn run(
 
     repo.store_bundle(&bundle)?;
     print_clip(&clip, format);
+
+    if copy {
+        let bundle_json = serde_json::to_string(&bundle)?;
+        let mut cb = ClipboardWriter::new()?;
+        cb.write_with_html(quote, &bundle_json)?;
+        println!("copied (html with data-crp-bundle): {}", clip.clip_hash.0);
+    }
 
     Ok(())
 }

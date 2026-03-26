@@ -59,6 +59,20 @@ enum Commands {
         /// Optional title
         #[arg(long)]
         title: Option<String>,
+
+        /// Also copy to the OS clipboard with provenance embedded
+        #[arg(long)]
+        copy: bool,
+    },
+
+    /// Copy a clip to the OS clipboard with embedded provenance
+    Copy {
+        /// Clip hash or id
+        hash_or_id: String,
+
+        /// Plain text only — no provenance metadata
+        #[arg(long)]
+        plain: bool,
     },
 
     /// Create a derived clip from one or more parent clips
@@ -187,6 +201,7 @@ fn main() {
             id,
             document_id,
             title,
+            copy,
         } => commands::clip::run(
             &url,
             &quote,
@@ -194,8 +209,12 @@ fn main() {
             id,
             document_id,
             title,
+            copy,
             &cli.format,
         ),
+        Commands::Copy { hash_or_id, plain } => {
+            commands::copy::run(&hash_or_id, plain, &cli.format)
+        }
         Commands::Derive {
             from,
             quote,

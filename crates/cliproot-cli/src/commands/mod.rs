@@ -1,6 +1,7 @@
 pub mod annotate;
 pub mod cite;
 pub mod clip;
+pub mod copy;
 pub mod derive;
 pub mod doctor;
 pub mod export;
