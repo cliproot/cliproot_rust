@@ -6,11 +6,12 @@ use crate::OutputFormat;
 pub fn run(
     document: Option<&str>,
     source_type: Option<&str>,
+    project: Option<&str>,
     limit: u32,
     format: &OutputFormat,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let repo = Repository::discover()?;
-    let clips = repo.list_clips(document, source_type, Some(limit))?;
+    let clips = repo.list_clips(document, source_type, project, Some(limit))?;
 
     if matches!(format, OutputFormat::Table) {
         println!("{:<22} {:<16} CONTENT", "HASH", "ID");

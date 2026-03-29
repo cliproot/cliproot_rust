@@ -34,6 +34,7 @@ pub enum RepoCmd {
     ListClips {
         document_id: Option<String>,
         source_type: Option<String>,
+        project_id: Option<String>,
         limit: Option<u32>,
         tx: Tx<Vec<Clip>>,
     },
@@ -98,12 +99,14 @@ impl RepoHandle {
                     RepoCmd::ListClips {
                         document_id,
                         source_type,
+                        project_id,
                         limit,
                         tx,
                     } => {
                         let _ = tx.send(repo.list_clips(
                             document_id.as_deref(),
                             source_type.as_deref(),
+                            project_id.as_deref(),
                             limit,
                         ));
                     }
@@ -186,6 +189,7 @@ impl RepoHandle {
         &self,
         document_id: Option<String>,
         source_type: Option<String>,
+        project_id: Option<String>,
         limit: Option<u32>,
     ) -> Result<Vec<Clip>, StoreError> {
         let (tx, rx) = oneshot::channel();
@@ -193,6 +197,7 @@ impl RepoHandle {
             RepoCmd::ListClips {
                 document_id,
                 source_type,
+                project_id,
                 limit,
                 tx,
             },

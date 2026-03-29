@@ -25,7 +25,7 @@ pub fn run(path: &str, format: &OutputFormat) -> Result<(), Box<dyn std::error::
             println!(
                 "Ingested {} clip(s), {} edge(s) from {}",
                 bundle.clips.len(),
-                bundle.derivation_edges.len(),
+                bundle.edges.len(),
                 path
             );
         }

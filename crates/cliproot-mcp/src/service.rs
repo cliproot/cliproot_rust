@@ -23,7 +23,7 @@ use serde_json::json;
 use crate::params::*;
 use crate::repo_handle::RepoHandle;
 
-const PROTOCOL_VERSION: &str = "0.0.2";
+const PROTOCOL_VERSION: &str = "0.0.3";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -73,7 +73,7 @@ impl ClipRootService {
         if path == "clips" {
             let clips = self
                 .repo
-                .list_clips(None, None, Some(200))
+                .list_clips(None, None, None, Some(200))
                 .await
                 .map_err(|e| e.to_string())?;
             let summaries: Vec<serde_json::Value> = clips
@@ -176,6 +176,7 @@ impl ClipRootService {
         let clip = Clip {
             clip_hash: clip_hash.clone(),
             id: params.id.map(CrpId),
+            project_id: params.project.clone().map(CrpId),
             document_id: params.document_id.map(CrpId),
             source_refs: vec![source_id],
             selectors: Some(Selectors {
@@ -199,12 +200,15 @@ impl ClipRootService {
             protocol_version: PROTOCOL_VERSION.to_string(),
             bundle_type: BundleType::Document,
             created_at: now,
+            project: None,
             document: None,
             agents: Vec::new(),
             sources: vec![source],
             clips: vec![clip.clone()],
+            artifacts: Vec::new(),
+            clip_artifact_refs: Vec::new(),
             activities: Vec::new(),
-            derivation_edges: Vec::new(),
+            edges: Vec::new(),
             reuse_events: Vec::new(),
             signatures: Vec::new(),
             registry: None,
@@ -273,6 +277,7 @@ impl ClipRootService {
         let clip = Clip {
             clip_hash: clip_hash.clone(),
             id: None,
+            project_id: params.project.clone().map(CrpId),
             document_id: None,
             source_refs: source_refs.clone(),
             selectors: Some(Selectors {
@@ -296,13 +301,14 @@ impl ClipRootService {
             serde_json::from_value(serde_json::Value::String(params.transformation_type))
                 .unwrap_or(TransformationType::Unknown);
 
-        let edges: Vec<DerivationEdge> = parent_hashes
+        let edges: Vec<Edge> = parent_hashes
             .iter()
-            .map(|ph| DerivationEdge {
+            .map(|ph| Edge {
                 id: CrpId(format!("edge-{}", uuid::Uuid::new_v4())),
-                child_clip_hash: clip_hash.clone(),
-                parent_clip_hash: ContentHash(ph.clone()),
-                transformation_type: transformation_type.clone(),
+                edge_type: EdgeType::WasDerivedFrom,
+                subject_ref: CrpId(clip_hash.0.clone()),
+                object_ref: CrpId(ph.clone()),
+                transformation_type: Some(transformation_type.clone()),
                 agent_id: params.agent.as_deref().map(|a| CrpId(a.to_string())),
                 confidence: None,
                 created_at: now.clone(),
@@ -313,12 +319,15 @@ impl ClipRootService {
             protocol_version: PROTOCOL_VERSION.to_string(),
             bundle_type: BundleType::Derivation,
             created_at: now,
+            project: None,
             document: None,
             agents: Vec::new(),
             sources: vec![derived_source],
             clips: vec![clip.clone()],
+            artifacts: Vec::new(),
+            clip_artifact_refs: Vec::new(),
             activities: Vec::new(),
-            derivation_edges: edges,
+            edges,
             reuse_events: Vec::new(),
             signatures: Vec::new(),
             registry: None,
@@ -414,7 +423,7 @@ impl ClipRootService {
     ) -> Result<CallToolResult, ErrorData> {
         let clips = self
             .repo
-            .list_clips(params.document_id, params.source_type, Some(params.limit))
+            .list_clips(params.document_id, params.source_type, params.project_id, Some(params.limit))
             .await
             .map_err(store_err)?;
 
@@ -449,7 +458,7 @@ impl ClipRootService {
         let fetch_limit = (params.limit * 10).min(2000);
         let clips = self
             .repo
-            .list_clips(None, None, Some(fetch_limit))
+            .list_clips(None, None, None, Some(fetch_limit))
             .await
             .map_err(store_err)?;
 

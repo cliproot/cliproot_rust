@@ -1,4 +1,5 @@
 pub mod annotate;
+pub mod artifact;
 pub mod cite;
 pub mod clip;
 pub mod copy;
@@ -10,5 +11,6 @@ pub mod init;
 pub mod inspect;
 pub mod list;
 pub mod mcp;
+pub mod project;
 pub mod trace;
 pub mod verify;

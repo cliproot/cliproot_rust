@@ -1,6 +1,6 @@
 use crate::error::CoreError;
 use crate::hash::{create_clip_hash, create_text_hash, ClipHashInput};
-use crate::model::{Clip, CrpBundle};
+use crate::model::{Clip, CrpBundle, EdgeType};
 
 /// Recompute clipHash from textHash, sourceRefs, and optional textQuoteExact; compare.
 pub fn verify_clip_hash(clip: &Clip) -> Result<(), CoreError> {
@@ -47,22 +47,22 @@ pub fn verify_bundle(bundle: &CrpBundle) -> Result<(), CoreError> {
         verify_text_hash(clip)?;
     }
 
-    // Check derivation edge references point to known clips
+    // Check derivation edges point to known child clips
     let clip_hashes: std::collections::HashSet<&str> = bundle
         .clips
         .iter()
         .map(|c| c.clip_hash.0.as_str())
         .collect();
 
-    for edge in &bundle.derivation_edges {
-        if !clip_hashes.contains(edge.child_clip_hash.0.as_str()) {
+    for edge in &bundle.edges {
+        if matches!(edge.edge_type, EdgeType::WasDerivedFrom)
+            && !clip_hashes.contains(edge.subject_ref.0.as_str())
+        {
             return Err(CoreError::VerificationFailed(format!(
-                "derivation edge {} references unknown child clip {}",
-                edge.id, edge.child_clip_hash
+                "edge {} references unknown subject clip {}",
+                edge.id, edge.subject_ref
             )));
         }
-        // Parent may be external (from another bundle), so we only warn if it's not found
-        // but don't fail verification — this supports cross-bundle derivation chains.
     }
 
     // Check sourceRefs point to known sources
@@ -104,6 +104,7 @@ mod tests {
             selectors: None,
             content: Some(content.to_string()),
             text_hash,
+            project_id: None,
             created_by_activity_id: None,
         }
     }

@@ -12,6 +12,9 @@ pub fn print_clip(clip: &Clip, format: &OutputFormat) {
             if let Some(id) = &clip.id {
                 println!("{}: {}", "ID".bold(), id);
             }
+            if let Some(project) = &clip.project_id {
+                println!("{}: {}", "Project".bold(), project);
+            }
             if let Some(doc) = &clip.document_id {
                 println!("{}: {}", "Document".bold(), doc);
             }

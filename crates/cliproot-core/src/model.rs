@@ -106,6 +106,9 @@ pub enum ActivityType {
     ReuseNotified,
     Copy,
     Derive,
+    Research,
+    Plan,
+    Review,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -123,6 +126,13 @@ pub enum TransformationType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SignatureAlg {
+    Ed25519,
+    ES256,
+    RS256,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ReuseStatus {
     Detected,
@@ -132,10 +142,42 @@ pub enum ReuseStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SignatureAlg {
-    Ed25519,
-    ES256,
-    RS256,
+#[serde(rename_all = "camelCase")]
+pub enum EdgeType {
+    WasDerivedFrom,
+    WasGeneratedBy,
+    Used,
+    WasAttributedTo,
+    WasAssociatedWith,
+    ActedOnBehalfOf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ArtifactType {
+    Markdown,
+    Prompt,
+    Session,
+    Config,
+    Diagram,
+    Text,
+    Json,
+    Binary,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ClipArtifactRelationship {
+    #[serde(rename = "generated_from")]
+    GeneratedFrom,
+    #[serde(rename = "cited_in")]
+    CitedIn,
+    #[serde(rename = "prompt_for")]
+    PromptFor,
+    #[serde(rename = "attached_to")]
+    AttachedTo,
+    #[serde(rename = "unknown")]
+    Unknown,
 }
 
 // ── Structs ──
@@ -146,6 +188,9 @@ pub struct CrpBundle {
     pub protocol_version: String,
     pub bundle_type: BundleType,
     pub created_at: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<Project>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub document: Option<Document>,
@@ -160,10 +205,16 @@ pub struct CrpBundle {
     pub clips: Vec<Clip>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub artifacts: Vec<Artifact>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub clip_artifact_refs: Vec<ClipArtifactRef>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub activities: Vec<Activity>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub derivation_edges: Vec<DerivationEdge>,
+    pub edges: Vec<Edge>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reuse_events: Vec<ReuseEvent>,
@@ -173,6 +224,22 @@ pub struct CrpBundle {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub registry: Option<RegistryRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Project {
+    pub id: CrpId,
+    pub name: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -234,6 +301,9 @@ pub struct Clip {
     pub id: Option<CrpId>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<CrpId>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub document_id: Option<CrpId>,
 
     pub source_refs: Vec<String>,
@@ -248,6 +318,40 @@ pub struct Clip {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_by_activity_id: Option<CrpId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Artifact {
+    pub artifact_hash: ContentHash,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<CrpId>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<CrpId>,
+
+    pub artifact_type: ArtifactType,
+    pub file_name: String,
+    pub mime_type: String,
+    pub byte_size: u64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_base64: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipArtifactRef {
+    pub clip_hash: ContentHash,
+    pub artifact_hash: ContentHash,
+    pub relationship: ClipArtifactRelationship,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -320,11 +424,14 @@ pub struct MediaTimeSelector {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DerivationEdge {
+pub struct Edge {
     pub id: CrpId,
-    pub child_clip_hash: ContentHash,
-    pub parent_clip_hash: ContentHash,
-    pub transformation_type: TransformationType,
+    pub edge_type: EdgeType,
+    pub subject_ref: CrpId,
+    pub object_ref: CrpId,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transformation_type: Option<TransformationType>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<CrpId>,
@@ -342,7 +449,16 @@ pub struct Activity {
     pub activity_type: ActivityType,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<CrpId>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<CrpId>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parameters: Option<serde_json::Value>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub used_source_refs: Vec<String>,
@@ -351,6 +467,9 @@ pub struct Activity {
     pub generated_clip_refs: Vec<String>,
 
     pub created_at: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ended_at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -7,7 +7,7 @@ use cliproot_core::{
 use cliproot_store::Repository;
 use tempfile::TempDir;
 
-fn make_clip(content: &str, source_id: &str) -> (Clip, SourceRecord) {
+fn make_clip(content: &str, source_id: &str, project_id: &str) -> (Clip, SourceRecord) {
     let source = SourceRecord {
         id: CrpId(source_id.to_string()),
         source_type: SourceType::ExternalQuoted,
@@ -28,6 +28,7 @@ fn make_clip(content: &str, source_id: &str) -> (Clip, SourceRecord) {
     let clip = Clip {
         clip_hash,
         id: Some(CrpId(format!("clip-{source_id}"))),
+        project_id: Some(CrpId(project_id.to_string())),
         document_id: None,
         source_refs: vec![source_id.to_string()],
         selectors: Some(Selectors {
@@ -50,6 +51,16 @@ fn make_clip(content: &str, source_id: &str) -> (Clip, SourceRecord) {
     (clip, source)
 }
 
+fn make_project() -> Project {
+    Project {
+        id: CrpId("proj_demo".to_string()),
+        name: "Demo".to_string(),
+        description: Some("Roundtrip test project".to_string()),
+        created_at: Some(now()),
+        updated_at: Some(now()),
+    }
+}
+
 fn now() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
@@ -57,24 +68,27 @@ fn now() -> String {
 #[test]
 fn test_full_roundtrip() {
     let tmp = TempDir::new().unwrap();
-
-    // 1. Init repository
     let repo = Repository::init(tmp.path()).unwrap();
+    repo.create_project("proj_demo", "Demo", Some("Roundtrip test project".to_string()))
+        .unwrap();
+    repo.use_project("proj_demo").unwrap();
 
-    // 2. Store a clip
-    let (clip1, source1) = make_clip("Hello world", "src_01");
+    let (clip1, source1) = make_clip("Hello world", "src_01", "proj_demo");
     let clip1_hash = clip1.clip_hash.0.clone();
 
     let bundle1 = CrpBundle {
-        protocol_version: "0.0.2".to_string(),
+        protocol_version: "0.0.3".to_string(),
         bundle_type: BundleType::Document,
         created_at: now(),
+        project: Some(make_project()),
         document: None,
         agents: Vec::new(),
         sources: vec![source1],
         clips: vec![clip1.clone()],
+        artifacts: Vec::new(),
+        clip_artifact_refs: Vec::new(),
         activities: Vec::new(),
-        derivation_edges: Vec::new(),
+        edges: Vec::new(),
         reuse_events: Vec::new(),
         signatures: Vec::new(),
         registry: None,
@@ -83,16 +97,13 @@ fn test_full_roundtrip() {
     let stored_hash = repo.store_bundle(&bundle1).unwrap();
     assert_eq!(stored_hash, clip1_hash);
 
-    // 3. Retrieve by hash and verify integrity
     let retrieved = repo.get_clip_full(&clip1_hash).unwrap().unwrap();
     assert_eq!(retrieved.content.as_deref(), Some("Hello world"));
     verify_clip_hash(&retrieved).unwrap();
     verify_text_hash(&retrieved).unwrap();
 
-    // 4. Derive a new clip from it
     let derived_content = "Summary of hello";
-    let (mut derived_clip, derived_source) = make_clip(derived_content, "src_derived");
-    // Recalculate with proper source refs
+    let (mut derived_clip, derived_source) = make_clip(derived_content, "src_derived", "proj_demo");
     let derived_text_hash = create_text_hash(derived_content);
     let derived_clip_hash = create_clip_hash(ClipHashInput {
         text_hash: derived_text_hash.clone(),
@@ -102,26 +113,30 @@ fn test_full_roundtrip() {
     derived_clip.clip_hash = derived_clip_hash.clone();
     derived_clip.text_hash = derived_text_hash;
 
-    let edge = DerivationEdge {
+    let edge = Edge {
         id: CrpId("edge_01".to_string()),
-        child_clip_hash: derived_clip_hash.clone(),
-        parent_clip_hash: ContentHash(clip1_hash.clone()),
-        transformation_type: TransformationType::Summary,
+        edge_type: EdgeType::WasDerivedFrom,
+        subject_ref: CrpId(derived_clip_hash.0.clone()),
+        object_ref: CrpId(clip1_hash.clone()),
+        transformation_type: Some(TransformationType::Summary),
         agent_id: None,
         confidence: None,
         created_at: now(),
     };
 
     let bundle2 = CrpBundle {
-        protocol_version: "0.0.2".to_string(),
+        protocol_version: "0.0.3".to_string(),
         bundle_type: BundleType::Derivation,
         created_at: now(),
+        project: Some(make_project()),
         document: None,
         agents: Vec::new(),
         sources: vec![derived_source],
         clips: vec![derived_clip.clone()],
+        artifacts: Vec::new(),
+        clip_artifact_refs: Vec::new(),
         activities: Vec::new(),
-        derivation_edges: vec![edge],
+        edges: vec![edge],
         reuse_events: Vec::new(),
         signatures: Vec::new(),
         registry: None,
@@ -129,29 +144,25 @@ fn test_full_roundtrip() {
 
     repo.store_bundle(&bundle2).unwrap();
 
-    // 5. Trace lineage from derived → original
     let lineage = repo.trace(&derived_clip_hash.0).unwrap();
     assert!(!lineage.is_empty());
     assert_eq!(lineage[0].parent_hash, clip1_hash);
 
-    // 6. Export as bundle JSON
     let exported = repo.export_bundle(&derived_clip_hash.0).unwrap();
-    assert_eq!(exported.protocol_version, "0.0.2");
+    assert_eq!(exported.protocol_version, "0.0.3");
     assert!(!exported.clips.is_empty());
-    assert!(!exported.derivation_edges.is_empty());
+    assert!(!exported.edges.is_empty());
+    assert_eq!(exported.project.as_ref().map(|p| p.id.0.as_str()), Some("proj_demo"));
 
-    // 7. Validate exported JSON structure
     let json = serde_json::to_string_pretty(&exported).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-    assert_eq!(parsed["protocolVersion"], "0.0.2");
+    assert_eq!(parsed["protocolVersion"], "0.0.3");
     assert_eq!(parsed["bundleType"], "provenance-export");
 
-    // 8. Ingest into a fresh repository
     let tmp2 = TempDir::new().unwrap();
     let repo2 = Repository::init(tmp2.path()).unwrap();
     repo2.ingest_bundle(&exported).unwrap();
 
-    // 9. Verify round-trip integrity
     let reloaded = repo2.get_clip_full(&derived_clip_hash.0).unwrap().unwrap();
     verify_clip_hash(&reloaded).unwrap();
     verify_text_hash(&reloaded).unwrap();
@@ -159,38 +170,45 @@ fn test_full_roundtrip() {
 }
 
 #[test]
-fn test_verify_all() {
+fn test_artifact_roundtrip() {
     let tmp = TempDir::new().unwrap();
     let repo = Repository::init(tmp.path()).unwrap();
+    repo.create_project("proj_demo", "Demo", None).unwrap();
+    repo.use_project("proj_demo").unwrap();
 
-    let (clip, source) = make_clip("Test content", "src_v");
-    let bundle = CrpBundle {
-        protocol_version: "0.0.2".to_string(),
-        bundle_type: BundleType::Document,
-        created_at: now(),
-        document: None,
-        agents: Vec::new(),
-        sources: vec![source],
-        clips: vec![clip],
-        activities: Vec::new(),
-        derivation_edges: Vec::new(),
-        reuse_events: Vec::new(),
-        signatures: Vec::new(),
-        registry: None,
-    };
+    let artifact = repo
+        .add_artifact(
+            None,
+            Some(b"# Plan\n\n- Research\n- Implement"),
+            Some("plan.md"),
+            ArtifactType::Markdown,
+            Some("text/markdown"),
+            Some("artifact_plan"),
+            None,
+            None,
+        )
+        .unwrap();
 
-    repo.store_bundle(&bundle).unwrap();
+    let listed = repo.list_artifacts(None).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].artifact_hash, artifact.artifact_hash);
 
-    let errors = repo.verify_all().unwrap();
-    assert!(errors.is_empty());
+    let restore_dir = tmp.path().join("restore");
+    std::fs::create_dir_all(&restore_dir).unwrap();
+    let restored = repo
+        .restore_artifact(&artifact.artifact_hash.0, Some(&restore_dir))
+        .unwrap();
+    let restored_text = std::fs::read_to_string(restored).unwrap();
+    assert!(restored_text.contains("Research"));
 }
 
 #[test]
 fn test_example_bundle_deserialization() {
     let json =
-        include_str!("../../../../cliproot/schema/examples/crp-v0.0.2.document.example.json");
+        include_str!("../../../../cliproot/schema/examples/crp-v0.0.3.document.example.json");
     let bundle: CrpBundle = serde_json::from_str(json).unwrap();
-    assert_eq!(bundle.protocol_version, "0.0.2");
+    assert_eq!(bundle.protocol_version, "0.0.3");
     assert_eq!(bundle.clips.len(), 2);
-    assert_eq!(bundle.derivation_edges.len(), 1);
+    assert_eq!(bundle.edges.len(), 2);
+    assert_eq!(bundle.project.unwrap().id.0, "proj_auth_refactor");
 }

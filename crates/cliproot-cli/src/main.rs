@@ -56,6 +56,10 @@ enum Commands {
         #[arg(long)]
         document_id: Option<String>,
 
+        /// Optional project id (falls back to current project)
+        #[arg(long)]
+        project: Option<String>,
+
         /// Optional title
         #[arg(long)]
         title: Option<String>,
@@ -92,6 +96,10 @@ enum Commands {
         /// Optional agent id
         #[arg(long)]
         agent: Option<String>,
+
+        /// Optional project id (falls back to current project)
+        #[arg(long)]
+        project: Option<String>,
     },
 
     /// Display clip details
@@ -121,6 +129,10 @@ enum Commands {
         /// Filter by source type
         #[arg(long)]
         source_type: Option<String>,
+
+        /// Filter by project id
+        #[arg(long)]
+        project: Option<String>,
 
         /// Maximum number of results
         #[arg(long, default_value = "50")]
@@ -187,6 +199,74 @@ enum Commands {
         #[arg(long, short)]
         path: Option<String>,
     },
+
+    /// Manage projects
+    Project {
+        #[command(subcommand)]
+        command: ProjectCommands,
+    },
+
+    /// Manage artifacts
+    Artifact {
+        #[command(subcommand)]
+        command: ArtifactCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProjectCommands {
+    Create {
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        description: Option<String>,
+    },
+    List,
+    Use {
+        project_id: String,
+    },
+    Delete {
+        project_id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ArtifactCommands {
+    Add {
+        path: Option<String>,
+        #[arg(long)]
+        content: Option<String>,
+        #[arg(long)]
+        file_name: Option<String>,
+        #[arg(long)]
+        artifact_type: String,
+        #[arg(long)]
+        mime_type: Option<String>,
+        #[arg(long)]
+        id: Option<String>,
+        #[arg(long)]
+        project: Option<String>,
+    },
+    List {
+        #[arg(long)]
+        project: Option<String>,
+    },
+    Get {
+        artifact_hash: String,
+    },
+    Restore {
+        artifact_hash: String,
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+    Link {
+        clip_hash_or_id: String,
+        artifact_hash: String,
+        #[arg(long)]
+        relationship: String,
+    },
 }
 
 fn main() {
@@ -200,6 +280,7 @@ fn main() {
             source_type,
             id,
             document_id,
+            project,
             title,
             copy,
         } => commands::clip::run(
@@ -208,6 +289,7 @@ fn main() {
             &source_type,
             id,
             document_id,
+            project,
             title,
             copy,
             &cli.format,
@@ -220,7 +302,15 @@ fn main() {
             quote,
             activity_type,
             agent,
-        } => commands::derive::run(&from, &quote, &activity_type, agent.as_deref(), &cli.format),
+            project,
+        } => commands::derive::run(
+            &from,
+            &quote,
+            &activity_type,
+            agent.as_deref(),
+            project.as_deref(),
+            &cli.format,
+        ),
         Commands::Inspect { hash_or_id } => commands::inspect::run(&hash_or_id, &cli.format),
         Commands::Trace { hash_or_id } => commands::trace::run(&hash_or_id, &cli.format),
         Commands::Verify { hash_or_id } => {
@@ -229,10 +319,12 @@ fn main() {
         Commands::List {
             document,
             source_type,
+            project,
             limit,
         } => commands::list::run(
             document.as_deref(),
             source_type.as_deref(),
+            project.as_deref(),
             limit,
             &cli.format,
         ),
@@ -251,6 +343,56 @@ fn main() {
             commands::doctor::run(&file, threshold, &cli.format)
         }
         Commands::Mcp { path } => commands::mcp::run(path.as_deref()),
+        Commands::Project { command } => match command {
+            ProjectCommands::Create {
+                id,
+                name,
+                description,
+            } => commands::project::create(&id, &name, description, &cli.format),
+            ProjectCommands::List => commands::project::list(&cli.format),
+            ProjectCommands::Use { project_id } => commands::project::use_project(&project_id),
+            ProjectCommands::Delete { project_id } => commands::project::delete(&project_id),
+        },
+        Commands::Artifact { command } => match command {
+            ArtifactCommands::Add {
+                path,
+                content,
+                file_name,
+                artifact_type,
+                mime_type,
+                id,
+                project,
+            } => commands::artifact::add(
+                path.as_deref(),
+                content.as_deref(),
+                file_name.as_deref(),
+                &artifact_type,
+                mime_type.as_deref(),
+                id.as_deref(),
+                project.as_deref(),
+                &cli.format,
+            ),
+            ArtifactCommands::List { project } => {
+                commands::artifact::list(project.as_deref(), &cli.format)
+            }
+            ArtifactCommands::Get { artifact_hash } => {
+                commands::artifact::get(&artifact_hash, &cli.format)
+            }
+            ArtifactCommands::Restore {
+                artifact_hash,
+                output,
+            } => commands::artifact::restore(&artifact_hash, output.as_deref()),
+            ArtifactCommands::Link {
+                clip_hash_or_id,
+                artifact_hash,
+                relationship,
+            } => commands::artifact::link(
+                &clip_hash_or_id,
+                &artifact_hash,
+                &relationship,
+                &cli.format,
+            ),
+        },
     };
 
     if let Err(e) = result {

@@ -9,9 +9,14 @@ pub fn run(
     quote: &str,
     activity_type_str: &str,
     agent: Option<&str>,
+    project_id: Option<&str>,
     format: &OutputFormat,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let repo = Repository::discover()?;
+    let resolved_project_id = project_id
+        .map(|value| value.to_string())
+        .or(repo.current_project_id()?)
+        .map(CrpId);
 
     // Resolve parent clip hashes
     let mut parent_hashes = Vec::new();
@@ -58,6 +63,7 @@ pub fn run(
     let clip = Clip {
         clip_hash: clip_hash.clone(),
         id: None,
+        project_id: resolved_project_id.clone(),
         document_id: None,
         source_refs: source_refs.clone(),
         selectors: Some(Selectors {
@@ -85,13 +91,14 @@ pub fn run(
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
     // Create derivation edges
-    let edges: Vec<DerivationEdge> = parent_hashes
+    let edges: Vec<Edge> = parent_hashes
         .iter()
-        .map(|parent_hash| DerivationEdge {
+        .map(|parent_hash| Edge {
             id: CrpId(format!("edge-{}", uuid::Uuid::new_v4())),
-            child_clip_hash: clip_hash.clone(),
-            parent_clip_hash: ContentHash(parent_hash.clone()),
-            transformation_type: transformation_type.clone(),
+            edge_type: EdgeType::WasDerivedFrom,
+            subject_ref: CrpId(clip_hash.0.clone()),
+            object_ref: CrpId(parent_hash.clone()),
+            transformation_type: Some(transformation_type.clone()),
             agent_id: agent.map(|a| CrpId(a.to_string())),
             confidence: None,
             created_at: now.clone(),
@@ -99,15 +106,20 @@ pub fn run(
         .collect();
 
     let bundle = CrpBundle {
-        protocol_version: "0.0.2".to_string(),
+        protocol_version: "0.0.3".to_string(),
         bundle_type: BundleType::Derivation,
         created_at: now,
+        project: resolved_project_id
+            .as_ref()
+            .and_then(|project_id| repo.list_projects().ok()?.into_iter().find(|p| p.id == *project_id)),
         document: None,
         agents: Vec::new(),
         sources: vec![derived_source],
         clips: vec![clip.clone()],
+        artifacts: Vec::new(),
+        clip_artifact_refs: Vec::new(),
         activities: Vec::new(),
-        derivation_edges: edges,
+        edges,
         reuse_events: Vec::new(),
         signatures: Vec::new(),
         registry: None,

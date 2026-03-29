@@ -22,6 +22,8 @@ pub struct ClipParams {
     pub document_id: Option<String>,
     /// Optional human-readable title for the source
     pub title: Option<String>,
+    /// Optional project id (falls back to current project)
+    pub project: Option<String>,
 }
 
 fn default_source_type() -> String {
@@ -41,6 +43,8 @@ pub struct DeriveParams {
     pub transformation_type: String,
     /// Optional agent ID (e.g. model identifier like "claude-opus-4")
     pub agent: Option<String>,
+    /// Optional project id (falls back to current project)
+    pub project: Option<String>,
 }
 
 // ── cliproot_inspect ───────────────────────────────────────────────────────
@@ -79,6 +83,8 @@ pub struct ListParams {
     pub document_id: Option<String>,
     /// Filter clips by source type string
     pub source_type: Option<String>,
+    /// Filter clips by project id
+    pub project_id: Option<String>,
     /// Maximum number of clips to return (default: 50)
     #[serde(default = "default_limit")]
     pub limit: u32,
