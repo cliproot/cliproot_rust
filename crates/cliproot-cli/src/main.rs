@@ -211,6 +211,12 @@ enum Commands {
         #[command(subcommand)]
         command: ArtifactCommands,
     },
+
+    /// Create, inspect, verify, and import .cliprootpack archives
+    Pack {
+        #[command(subcommand)]
+        command: PackCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -266,6 +272,38 @@ enum ArtifactCommands {
         artifact_hash: String,
         #[arg(long)]
         relationship: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum PackCommands {
+    Create {
+        /// Project id to export
+        project_id: Option<String>,
+        /// Root clip hash or id (repeatable)
+        #[arg(long = "root")]
+        roots: Vec<String>,
+        /// Optional ancestor depth limit when using --root
+        #[arg(long)]
+        depth: Option<u32>,
+        /// Output .cliprootpack path
+        #[arg(short, long)]
+        output: String,
+    },
+    Import {
+        /// Path to .cliprootpack archive
+        path: String,
+        /// Restore imported artifacts to a directory
+        #[arg(long)]
+        restore_artifacts: Option<String>,
+    },
+    Inspect {
+        /// Path to .cliprootpack archive
+        path: String,
+    },
+    Verify {
+        /// Path to .cliprootpack archive
+        path: String,
     },
 }
 
@@ -392,6 +430,20 @@ fn main() {
                 &relationship,
                 &cli.format,
             ),
+        },
+        Commands::Pack { command } => match command {
+            PackCommands::Create {
+                project_id,
+                roots,
+                depth,
+                output,
+            } => commands::pack::create(project_id.as_deref(), &roots, depth, &output, &cli.format),
+            PackCommands::Import {
+                path,
+                restore_artifacts,
+            } => commands::pack::import(&path, restore_artifacts.as_deref(), &cli.format),
+            PackCommands::Inspect { path } => commands::pack::inspect(&path, &cli.format),
+            PackCommands::Verify { path } => commands::pack::verify(&path, &cli.format),
         },
     };
 

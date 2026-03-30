@@ -1,5 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
+use std::fs::File;
+use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 
 use base64::engine::general_purpose::STANDARD;
@@ -10,10 +12,15 @@ use cliproot_core::{
     verify::{verify_clip_hash, verify_text_hash},
 };
 use sha2::{Digest, Sha256};
+use tar::{Archive, Builder, Header};
 
 use crate::error::StoreError;
 use crate::index_db::{IndexDb, LineageNode};
 use crate::object_store::ObjectStore;
+use crate::pack::{
+    safe_restore_name, sha256_digest, PackArtifactEntry, PackCounts, PackManifest, PackObjectEntry,
+    PackRootMode, PackRoots, PACK_FORMAT,
+};
 
 const PROTOCOL_VERSION: &str = "0.0.3";
 
@@ -202,7 +209,8 @@ impl Repository {
                     .decode(content_base64.as_bytes())
                     .map_err(|e| StoreError::Other(format!("invalid artifact base64: {e}")))?;
                 if !self.objects.has_artifact(&artifact.artifact_hash.0) {
-                    self.objects.write_artifact(&artifact.artifact_hash.0, &bytes)?;
+                    self.objects
+                        .write_artifact(&artifact.artifact_hash.0, &bytes)?;
                 }
             }
         }
@@ -539,6 +547,232 @@ impl Repository {
         Ok(link)
     }
 
+    pub fn create_pack(
+        &self,
+        project_id: Option<&str>,
+        roots: &[String],
+        depth: Option<u32>,
+        output: &Path,
+    ) -> Result<PackManifest, StoreError> {
+        if (project_id.is_some() && !roots.is_empty()) || (project_id.is_none() && roots.is_empty())
+        {
+            return Err(StoreError::Other(
+                "pack create requires either a project id or one or more --root values".to_string(),
+            ));
+        }
+
+        let created_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let (project, pack_roots, included_clip_hashes) = if let Some(project_id) = project_id {
+            let project = self
+                .index
+                .get_project_by_id(project_id)?
+                .ok_or_else(|| StoreError::Other(format!("project not found: {project_id}")))?;
+            let project_rows =
+                self.index
+                    .list_clips(None, None, Some(project_id), Some(u32::MAX))?;
+            let root_hashes = project_rows
+                .iter()
+                .map(|row| row.clip_hash.clone())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            let included = self.collect_closure(root_hashes.iter().cloned().collect(), None)?;
+            (
+                Some(project),
+                PackRoots {
+                    mode: PackRootMode::Project,
+                    project_id: Some(project_id.to_string()),
+                    clip_hashes: root_hashes,
+                },
+                included,
+            )
+        } else {
+            let resolved_roots = self.resolve_root_hashes(roots)?;
+            let root_hashes = resolved_roots.iter().cloned().collect::<BTreeSet<_>>();
+            let included = self.collect_closure(root_hashes.iter().cloned().collect(), depth)?;
+            (
+                None,
+                PackRoots {
+                    mode: PackRootMode::Roots,
+                    project_id: None,
+                    clip_hashes: root_hashes.into_iter().collect(),
+                },
+                included,
+            )
+        };
+
+        let mut bundle_hashes = BTreeSet::new();
+        let mut clip_links = BTreeMap::<String, ClipArtifactRef>::new();
+        for clip_hash in &included_clip_hashes {
+            let row = self
+                .index
+                .find_clip_by_hash(clip_hash)?
+                .ok_or_else(|| StoreError::Other(format!("clip not found: {clip_hash}")))?;
+            bundle_hashes.insert(row.bundle_hash);
+            for link in self.index.get_clip_artifact_refs_for_clip(clip_hash)? {
+                let key = format!(
+                    "{}:{}:{:?}",
+                    link.clip_hash.0, link.artifact_hash.0, link.relationship
+                );
+                clip_links.entry(key).or_insert(link);
+            }
+        }
+
+        let mut artifacts = BTreeMap::<String, Artifact>::new();
+        if let Some(project_id) = project_id {
+            for artifact in self.list_artifacts(Some(project_id))? {
+                artifacts.insert(artifact.artifact_hash.0.clone(), artifact);
+            }
+        }
+        for link in clip_links.values() {
+            let artifact = self
+                .index
+                .get_artifact_by_hash(&link.artifact_hash.0)?
+                .ok_or_else(|| {
+                    StoreError::Other(format!("artifact not found: {}", link.artifact_hash.0))
+                })?;
+            artifacts
+                .entry(artifact.artifact_hash.0.clone())
+                .or_insert(artifact);
+        }
+
+        let mut object_entries = Vec::new();
+        let mut archive_entries = BTreeMap::<String, Vec<u8>>::new();
+        let mut unique_pack_clips = BTreeSet::new();
+        let mut unique_pack_edges = BTreeSet::new();
+
+        for bundle_hash in bundle_hashes {
+            let bytes = self.objects.read_bundle_bytes(&bundle_hash)?;
+            let bundle: CrpBundle = serde_json::from_slice(&bytes)?;
+            let clip_hashes = bundle
+                .clips
+                .iter()
+                .map(|clip| clip.clip_hash.0.clone())
+                .collect::<Vec<_>>();
+            for clip_hash in &clip_hashes {
+                unique_pack_clips.insert(clip_hash.clone());
+            }
+            for edge in &bundle.edges {
+                unique_pack_edges.insert(edge.id.0.clone());
+            }
+
+            let archive_path = format!("objects/{bundle_hash}.json");
+            archive_entries.insert(archive_path.clone(), bytes.clone());
+            object_entries.push(PackObjectEntry {
+                bundle_hash,
+                archive_path,
+                byte_size: bytes.len() as u64,
+                sha256_digest: sha256_digest(&bytes),
+                clip_hashes,
+            });
+        }
+
+        let mut artifact_entries = Vec::new();
+        for artifact in artifacts.into_values() {
+            if !self.objects.has_artifact(&artifact.artifact_hash.0) {
+                return Err(StoreError::Other(format!(
+                    "artifact blob missing from object store: {}",
+                    artifact.artifact_hash.0
+                )));
+            }
+            let bytes = self.objects.read_artifact(&artifact.artifact_hash.0)?;
+            let entry = PackArtifactEntry::from_artifact(&artifact);
+            archive_entries.insert(entry.archive_path.clone(), bytes);
+            artifact_entries.push(entry);
+        }
+
+        let manifest = PackManifest {
+            format: PACK_FORMAT.to_string(),
+            created_at,
+            project,
+            roots: pack_roots,
+            counts: PackCounts {
+                bundles: object_entries.len(),
+                clips: unique_pack_clips.len(),
+                edges: unique_pack_edges.len(),
+                artifacts: artifact_entries.len(),
+                links: clip_links.len(),
+            },
+            objects: object_entries,
+            artifacts: artifact_entries,
+            clip_artifact_refs: clip_links.into_values().collect(),
+        };
+
+        validate_manifest(&manifest)?;
+        write_pack_archive(output, &manifest, &archive_entries)?;
+        Ok(manifest)
+    }
+
+    pub fn inspect_pack(path: &Path) -> Result<PackManifest, StoreError> {
+        let (manifest, _) = read_pack_archive(path)?;
+        validate_manifest(&manifest)?;
+        Ok(manifest)
+    }
+
+    pub fn verify_pack(path: &Path) -> Result<PackManifest, StoreError> {
+        let (manifest, entries) = read_pack_archive(path)?;
+        verify_pack_contents(&manifest, &entries)?;
+        Ok(manifest)
+    }
+
+    pub fn import_pack(
+        &self,
+        path: &Path,
+        restore_artifacts_to: Option<&Path>,
+    ) -> Result<PackManifest, StoreError> {
+        let (manifest, entries) = read_pack_archive(path)?;
+        verify_pack_contents(&manifest, &entries)?;
+
+        if let Some(project) = &manifest.project {
+            self.index.upsert_project(project)?;
+        }
+
+        for object in &manifest.objects {
+            let bytes = entries.get(&object.archive_path).ok_or_else(|| {
+                StoreError::Other(format!("missing archive entry: {}", object.archive_path))
+            })?;
+            let bundle: CrpBundle = serde_json::from_slice(bytes)?;
+            self.ingest_bundle(&bundle)?;
+        }
+
+        for artifact_entry in &manifest.artifacts {
+            let bytes = entries.get(&artifact_entry.archive_path).ok_or_else(|| {
+                StoreError::Other(format!(
+                    "missing archive entry: {}",
+                    artifact_entry.archive_path
+                ))
+            })?;
+            let artifact = artifact_entry.clone().into_artifact();
+            if !self.objects.has_artifact(&artifact.artifact_hash.0) {
+                self.objects
+                    .write_artifact(&artifact.artifact_hash.0, bytes)?;
+            }
+            self.index
+                .upsert_artifact(&artifact, &artifact.artifact_hash.0)?;
+        }
+
+        for link in &manifest.clip_artifact_refs {
+            self.index.link_clip_artifact(link)?;
+        }
+
+        if let Some(dir) = restore_artifacts_to {
+            fs::create_dir_all(dir)?;
+            for artifact_entry in &manifest.artifacts {
+                let bytes = entries.get(&artifact_entry.archive_path).ok_or_else(|| {
+                    StoreError::Other(format!(
+                        "missing archive entry: {}",
+                        artifact_entry.archive_path
+                    ))
+                })?;
+                let file_name =
+                    safe_restore_name(&artifact_entry.artifact_hash, &artifact_entry.file_name);
+                fs::write(dir.join(file_name), bytes)?;
+            }
+        }
+
+        Ok(manifest)
+    }
+
     pub fn build_match_candidates(
         &self,
         project_id: Option<&str>,
@@ -610,6 +844,270 @@ fn hash_artifact_bytes(bytes: &[u8]) -> ContentHash {
     let digest = Sha256::digest(bytes);
     let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest);
     ContentHash(format!("sha256-{encoded}"))
+}
+
+impl Repository {
+    fn resolve_root_hashes(&self, roots: &[String]) -> Result<Vec<String>, StoreError> {
+        let mut resolved = Vec::new();
+        for root in roots {
+            let clip_hash = self
+                .resolve_clip_hash(root)?
+                .ok_or_else(|| StoreError::Other(format!("clip not found: {root}")))?;
+            resolved.push(clip_hash);
+        }
+        Ok(resolved)
+    }
+
+    fn collect_closure(
+        &self,
+        root_hashes: Vec<String>,
+        depth_limit: Option<u32>,
+    ) -> Result<BTreeSet<String>, StoreError> {
+        let mut visited = BTreeSet::new();
+        let mut queue = VecDeque::new();
+
+        for hash in root_hashes {
+            queue.push_back((hash, 0_u32));
+        }
+
+        while let Some((clip_hash, depth)) = queue.pop_front() {
+            if !visited.insert(clip_hash.clone()) {
+                continue;
+            }
+
+            let should_expand = match depth_limit {
+                Some(limit) => depth < limit,
+                None => true,
+            };
+            if !should_expand {
+                continue;
+            }
+
+            for edge in self.index.find_derivation_parents(&clip_hash)? {
+                queue.push_back((edge.object_ref, depth + 1));
+            }
+        }
+
+        Ok(visited)
+    }
+}
+
+fn validate_manifest(manifest: &PackManifest) -> Result<(), StoreError> {
+    if manifest.format != PACK_FORMAT {
+        return Err(StoreError::Other(format!(
+            "unsupported pack format: {}",
+            manifest.format
+        )));
+    }
+
+    match manifest.roots.mode {
+        PackRootMode::Project => {
+            if manifest.roots.project_id.is_none() {
+                return Err(StoreError::Other(
+                    "project-mode pack manifest requires roots.projectId".to_string(),
+                ));
+            }
+        }
+        PackRootMode::Roots => {
+            if manifest.roots.project_id.is_some() {
+                return Err(StoreError::Other(
+                    "root-mode pack manifest must not set roots.projectId".to_string(),
+                ));
+            }
+        }
+    }
+
+    let mut archive_paths = BTreeSet::new();
+    for object in &manifest.objects {
+        if !archive_paths.insert(object.archive_path.clone()) {
+            return Err(StoreError::Other(format!(
+                "duplicate archive path in manifest: {}",
+                object.archive_path
+            )));
+        }
+    }
+    for artifact in &manifest.artifacts {
+        if !archive_paths.insert(artifact.archive_path.clone()) {
+            return Err(StoreError::Other(format!(
+                "duplicate archive path in manifest: {}",
+                artifact.archive_path
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn read_pack_archive(path: &Path) -> Result<(PackManifest, BTreeMap<String, Vec<u8>>), StoreError> {
+    let file = File::open(path)?;
+    let decoder = zstd::Decoder::new(file)?;
+    let mut archive = Archive::new(decoder);
+    let mut entries = BTreeMap::<String, Vec<u8>>::new();
+
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let entry_path = entry.path()?.to_string_lossy().to_string();
+        if entries.contains_key(&entry_path) {
+            return Err(StoreError::Other(format!(
+                "duplicate archive entry: {entry_path}"
+            )));
+        }
+        let mut bytes = Vec::new();
+        entry.read_to_end(&mut bytes)?;
+        entries.insert(entry_path, bytes);
+    }
+
+    let manifest_bytes = entries
+        .get("manifest.json")
+        .ok_or_else(|| StoreError::Other("pack archive is missing manifest.json".to_string()))?;
+    let manifest: PackManifest = serde_json::from_slice(manifest_bytes)?;
+    Ok((manifest, entries))
+}
+
+fn verify_pack_contents(
+    manifest: &PackManifest,
+    entries: &BTreeMap<String, Vec<u8>>,
+) -> Result<(), StoreError> {
+    validate_manifest(manifest)?;
+
+    let mut clip_hashes = BTreeSet::new();
+    let mut edge_ids = BTreeSet::new();
+    for object in &manifest.objects {
+        let bytes = entries.get(&object.archive_path).ok_or_else(|| {
+            StoreError::Other(format!("missing archive entry: {}", object.archive_path))
+        })?;
+        if bytes.len() as u64 != object.byte_size {
+            return Err(StoreError::Other(format!(
+                "size mismatch for {}: expected {}, found {}",
+                object.archive_path,
+                object.byte_size,
+                bytes.len()
+            )));
+        }
+        let digest = sha256_digest(bytes);
+        if digest != object.sha256_digest {
+            return Err(StoreError::Other(format!(
+                "digest mismatch for {}: expected {}, found {}",
+                object.archive_path, object.sha256_digest, digest
+            )));
+        }
+
+        let bundle: CrpBundle = serde_json::from_slice(bytes)?;
+        cliproot_core::verify::verify_bundle(&bundle)?;
+        let bundle_clip_hashes = bundle
+            .clips
+            .iter()
+            .map(|clip| clip.clip_hash.0.clone())
+            .collect::<BTreeSet<_>>();
+        let manifest_clip_hashes = object.clip_hashes.iter().cloned().collect::<BTreeSet<_>>();
+        if bundle_clip_hashes != manifest_clip_hashes {
+            return Err(StoreError::Other(format!(
+                "clip hash list mismatch for {}",
+                object.archive_path
+            )));
+        }
+        clip_hashes.extend(bundle_clip_hashes);
+        edge_ids.extend(bundle.edges.iter().map(|edge| edge.id.0.clone()));
+    }
+
+    let artifact_hashes = manifest
+        .artifacts
+        .iter()
+        .map(|artifact| artifact.artifact_hash.clone())
+        .collect::<BTreeSet<_>>();
+
+    for artifact in &manifest.artifacts {
+        let bytes = entries.get(&artifact.archive_path).ok_or_else(|| {
+            StoreError::Other(format!("missing archive entry: {}", artifact.archive_path))
+        })?;
+        if bytes.len() as u64 != artifact.byte_size {
+            return Err(StoreError::Other(format!(
+                "size mismatch for {}: expected {}, found {}",
+                artifact.archive_path,
+                artifact.byte_size,
+                bytes.len()
+            )));
+        }
+        let digest = sha256_digest(bytes);
+        if digest != artifact.sha256_digest {
+            return Err(StoreError::Other(format!(
+                "digest mismatch for {}: expected {}, found {}",
+                artifact.archive_path, artifact.sha256_digest, digest
+            )));
+        }
+        if digest != artifact.artifact_hash {
+            return Err(StoreError::Other(format!(
+                "artifact hash mismatch for {}: expected {}, found {}",
+                artifact.archive_path, artifact.artifact_hash, digest
+            )));
+        }
+    }
+
+    for link in &manifest.clip_artifact_refs {
+        if !clip_hashes.contains(&link.clip_hash.0) {
+            return Err(StoreError::Other(format!(
+                "clip-artifact link references missing clip {}",
+                link.clip_hash.0
+            )));
+        }
+        if !artifact_hashes.contains(&link.artifact_hash.0) {
+            return Err(StoreError::Other(format!(
+                "clip-artifact link references missing artifact {}",
+                link.artifact_hash.0
+            )));
+        }
+    }
+
+    if manifest.counts.bundles != manifest.objects.len()
+        || manifest.counts.clips != clip_hashes.len()
+        || manifest.counts.edges != edge_ids.len()
+        || manifest.counts.artifacts != manifest.artifacts.len()
+        || manifest.counts.links != manifest.clip_artifact_refs.len()
+    {
+        return Err(StoreError::Other(
+            "manifest counts do not match archive contents".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn write_pack_archive(
+    output: &Path,
+    manifest: &PackManifest,
+    archive_entries: &BTreeMap<String, Vec<u8>>,
+) -> Result<(), StoreError> {
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let file = File::create(output)?;
+    let encoder = zstd::Encoder::new(file, 3)?;
+    let mut builder = Builder::new(encoder);
+
+    let manifest_bytes = serde_json::to_vec_pretty(manifest)?;
+    append_tar_entry(&mut builder, "manifest.json", &manifest_bytes)?;
+    for (path, bytes) in archive_entries {
+        append_tar_entry(&mut builder, path, bytes)?;
+    }
+
+    builder.finish()?;
+    let encoder = builder.into_inner()?;
+    encoder.finish()?;
+    Ok(())
+}
+
+fn append_tar_entry<W: std::io::Write>(
+    builder: &mut Builder<W>,
+    path: &str,
+    bytes: &[u8],
+) -> Result<(), StoreError> {
+    let mut header = Header::new_gnu();
+    header.set_size(bytes.len() as u64);
+    header.set_mode(0o644);
+    header.set_cksum();
+    builder.append_data(&mut header, path, Cursor::new(bytes))?;
+    Ok(())
 }
 
 fn guess_mime_type(file_name: &str) -> String {

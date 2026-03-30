@@ -11,6 +11,7 @@ pub mod init;
 pub mod inspect;
 pub mod list;
 pub mod mcp;
+pub mod pack;
 pub mod project;
 pub mod trace;
 pub mod verify;

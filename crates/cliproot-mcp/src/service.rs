@@ -423,7 +423,12 @@ impl ClipRootService {
     ) -> Result<CallToolResult, ErrorData> {
         let clips = self
             .repo
-            .list_clips(params.document_id, params.source_type, params.project_id, Some(params.limit))
+            .list_clips(
+                params.document_id,
+                params.source_type,
+                params.project_id,
+                Some(params.limit),
+            )
             .await
             .map_err(store_err)?;
 

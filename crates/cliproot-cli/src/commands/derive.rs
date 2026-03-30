@@ -109,9 +109,12 @@ pub fn run(
         protocol_version: "0.0.3".to_string(),
         bundle_type: BundleType::Derivation,
         created_at: now,
-        project: resolved_project_id
-            .as_ref()
-            .and_then(|project_id| repo.list_projects().ok()?.into_iter().find(|p| p.id == *project_id)),
+        project: resolved_project_id.as_ref().and_then(|project_id| {
+            repo.list_projects()
+                .ok()?
+                .into_iter()
+                .find(|p| p.id == *project_id)
+        }),
         document: None,
         agents: Vec::new(),
         sources: vec![derived_source],

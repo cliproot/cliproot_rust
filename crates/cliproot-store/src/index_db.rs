@@ -142,8 +142,10 @@ impl IndexDb {
                 return Ok(());
             }
         }
-        self.conn
-            .execute(&format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"), [])?;
+        self.conn.execute(
+            &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+            [],
+        )?;
         Ok(())
     }
 
@@ -180,7 +182,9 @@ impl IndexDb {
                 "INSERT OR REPLACE INTO agents (id, agent_type, name, uri) VALUES (?1, ?2, ?3, ?4)",
                 params![
                     agent.id.0,
-                    serde_json::to_value(&agent.agent_type)?.as_str().unwrap_or(""),
+                    serde_json::to_value(&agent.agent_type)?
+                        .as_str()
+                        .unwrap_or(""),
                     agent.name,
                     agent.uri,
                 ],
@@ -490,7 +494,9 @@ impl IndexDb {
             Ok(LineageNode {
                 clip_hash: row.get(0)?,
                 parent_hash: row.get(1)?,
-                transformation_type: row.get::<_, Option<String>>(2)?.unwrap_or_else(|| "unknown".to_string()),
+                transformation_type: row
+                    .get::<_, Option<String>>(2)?
+                    .unwrap_or_else(|| "unknown".to_string()),
                 depth: row.get(3)?,
             })
         })?;
@@ -533,13 +539,16 @@ impl IndexDb {
         let rows = stmt.query_map(params![subject_ref], |row| {
             Ok(Edge {
                 id: cliproot_core::CrpId(row.get(0)?),
-                edge_type: serde_json::from_value(serde_json::Value::String(row.get::<_, String>(1)?))
-                    .unwrap_or(cliproot_core::EdgeType::WasDerivedFrom),
+                edge_type: serde_json::from_value(serde_json::Value::String(
+                    row.get::<_, String>(1)?,
+                ))
+                .unwrap_or(cliproot_core::EdgeType::WasDerivedFrom),
                 subject_ref: cliproot_core::CrpId(row.get(2)?),
                 object_ref: cliproot_core::CrpId(row.get(3)?),
-                transformation_type: row
-                    .get::<_, Option<String>>(4)?
-                    .map(|t| serde_json::from_value(serde_json::Value::String(t)).unwrap_or(cliproot_core::TransformationType::Unknown)),
+                transformation_type: row.get::<_, Option<String>>(4)?.map(|t| {
+                    serde_json::from_value(serde_json::Value::String(t))
+                        .unwrap_or(cliproot_core::TransformationType::Unknown)
+                }),
                 agent_id: row.get::<_, Option<String>>(5)?.map(cliproot_core::CrpId),
                 confidence: row.get(6)?,
                 created_at: row.get(7)?,
@@ -564,7 +573,10 @@ impl IndexDb {
         .map_err(Into::into)
     }
 
-    pub fn get_artifact_by_hash(&self, artifact_hash: &str) -> Result<Option<Artifact>, StoreError> {
+    pub fn get_artifact_by_hash(
+        &self,
+        artifact_hash: &str,
+    ) -> Result<Option<Artifact>, StoreError> {
         let mut stmt = self.conn.prepare(
             "SELECT artifact_hash, id, project_id, artifact_type, file_name, mime_type, byte_size, metadata, created_at FROM artifacts WHERE artifact_hash = ?1",
         )?;
@@ -573,8 +585,10 @@ impl IndexDb {
                 artifact_hash: cliproot_core::ContentHash(row.get(0)?),
                 id: row.get::<_, Option<String>>(1)?.map(cliproot_core::CrpId),
                 project_id: row.get::<_, Option<String>>(2)?.map(cliproot_core::CrpId),
-                artifact_type: serde_json::from_value(serde_json::Value::String(row.get::<_, String>(3)?))
-                    .unwrap_or(cliproot_core::ArtifactType::Unknown),
+                artifact_type: serde_json::from_value(serde_json::Value::String(
+                    row.get::<_, String>(3)?,
+                ))
+                .unwrap_or(cliproot_core::ArtifactType::Unknown),
                 file_name: row.get(4)?,
                 mime_type: row.get(5)?,
                 byte_size: row.get::<_, i64>(6)? as u64,
@@ -601,8 +615,10 @@ impl IndexDb {
                 artifact_hash: cliproot_core::ContentHash(row.get(0)?),
                 id: row.get::<_, Option<String>>(1)?.map(cliproot_core::CrpId),
                 project_id: row.get::<_, Option<String>>(2)?.map(cliproot_core::CrpId),
-                artifact_type: serde_json::from_value(serde_json::Value::String(row.get::<_, String>(3)?))
-                    .unwrap_or(cliproot_core::ArtifactType::Unknown),
+                artifact_type: serde_json::from_value(serde_json::Value::String(
+                    row.get::<_, String>(3)?,
+                ))
+                .unwrap_or(cliproot_core::ArtifactType::Unknown),
                 file_name: row.get(4)?,
                 mime_type: row.get(5)?,
                 byte_size: row.get::<_, i64>(6)? as u64,
@@ -616,7 +632,11 @@ impl IndexDb {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub fn upsert_artifact(&self, artifact: &Artifact, bundle_hash: &str) -> Result<(), StoreError> {
+    pub fn upsert_artifact(
+        &self,
+        artifact: &Artifact,
+        bundle_hash: &str,
+    ) -> Result<(), StoreError> {
         self.conn.execute(
             "INSERT OR REPLACE INTO artifacts (artifact_hash, id, project_id, artifact_type, file_name, mime_type, byte_size, metadata, created_at, bundle_hash) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
@@ -658,8 +678,10 @@ impl IndexDb {
             Ok(ClipArtifactRef {
                 clip_hash: cliproot_core::ContentHash(row.get(0)?),
                 artifact_hash: cliproot_core::ContentHash(row.get(1)?),
-                relationship: serde_json::from_value(serde_json::Value::String(row.get::<_, String>(2)?))
-                    .unwrap_or(cliproot_core::ClipArtifactRelationship::Unknown),
+                relationship: serde_json::from_value(serde_json::Value::String(
+                    row.get::<_, String>(2)?,
+                ))
+                .unwrap_or(cliproot_core::ClipArtifactRelationship::Unknown),
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)

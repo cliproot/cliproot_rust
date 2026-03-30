@@ -31,7 +31,10 @@ pub fn add(
 
     match format {
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&artifact)?),
-        _ => println!("Stored artifact {} ({})", artifact.file_name, artifact.artifact_hash),
+        _ => println!(
+            "Stored artifact {} ({})",
+            artifact.file_name, artifact.artifact_hash
+        ),
     }
     Ok(())
 }
@@ -50,7 +53,10 @@ pub fn list(
                     .as_str()
                     .unwrap_or("unknown")
                     .to_string();
-                println!("{}\t{}\t{}", artifact.artifact_hash, kind, artifact.file_name);
+                println!(
+                    "{}\t{}\t{}",
+                    artifact.artifact_hash, kind, artifact.file_name
+                );
             }
             println!("\n{} artifact(s)", artifacts.len());
         }
@@ -58,17 +64,17 @@ pub fn list(
     Ok(())
 }
 
-pub fn get(
-    artifact_hash: &str,
-    format: &OutputFormat,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn get(artifact_hash: &str, format: &OutputFormat) -> Result<(), Box<dyn std::error::Error>> {
     let repo = Repository::discover()?;
     let artifact = repo
         .get_artifact(artifact_hash)?
         .ok_or_else(|| format!("artifact not found: {artifact_hash}"))?;
     match format {
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&artifact)?),
-        _ => println!("{}\t{}\t{}", artifact.artifact_hash, artifact.mime_type, artifact.file_name),
+        _ => println!(
+            "{}\t{}\t{}",
+            artifact.artifact_hash, artifact.mime_type, artifact.file_name
+        ),
     }
     Ok(())
 }

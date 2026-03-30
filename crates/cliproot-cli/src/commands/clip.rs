@@ -17,10 +17,7 @@ pub fn run(
     format: &OutputFormat,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let repo = Repository::discover()?;
-    let resolved_project_id = project_id
-        .clone()
-        .or(repo.current_project_id()?)
-        .map(CrpId);
+    let resolved_project_id = project_id.clone().or(repo.current_project_id()?).map(CrpId);
 
     let source_type: SourceType =
         serde_json::from_value(serde_json::Value::String(source_type_str.to_string()))?;
@@ -71,9 +68,12 @@ pub fn run(
         protocol_version: "0.0.3".to_string(),
         bundle_type: BundleType::Document,
         created_at: now,
-        project: resolved_project_id
-            .as_ref()
-            .and_then(|project_id| repo.list_projects().ok()?.into_iter().find(|p| p.id == *project_id)),
+        project: resolved_project_id.as_ref().and_then(|project_id| {
+            repo.list_projects()
+                .ok()?
+                .into_iter()
+                .find(|p| p.id == *project_id)
+        }),
         document: None,
         agents: Vec::new(),
         sources: vec![source],

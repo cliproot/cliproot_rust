@@ -358,6 +358,38 @@ The exported bundle is CRP `v0.0.3` and includes project metadata, generalized e
 cliproot ingest bundle.json
 ```
 
+### Create a `.cliprootpack`
+
+```bash
+# Export an entire project pack
+cliproot pack create auth-refactor -o auth-refactor.cliprootpack
+
+# Export from explicit roots with optional ancestor depth
+cliproot pack create --root sha256-abc123 --root sha256-def456 --depth 2 -o research.cliprootpack
+```
+
+`.cliprootpack` archives are `tar.zst` files containing a pack `manifest.json`, bundled CRP
+objects, and raw artifact blobs.
+
+### Inspect or verify a pack
+
+```bash
+cliproot pack inspect auth-refactor.cliprootpack
+cliproot pack verify auth-refactor.cliprootpack
+```
+
+`inspect --format json` emits the parsed manifest. `verify` checks manifest structure, archive
+entry sizes/digests, bundled CRP object validity, and artifact hash integrity.
+
+### Import a pack
+
+```bash
+cliproot pack import auth-refactor.cliprootpack
+
+# Restore imported artifacts to a directory
+cliproot pack import auth-refactor.cliprootpack --restore-artifacts ./context/
+```
+
 ### Annotate a document with inline citations
 
 Match document text against stored clips and insert citation markers.
