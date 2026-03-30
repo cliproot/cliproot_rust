@@ -4,6 +4,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
+pub struct EmptyParams {}
+
 // ── cliproot_clip ──────────────────────────────────────────────────────────
 
 /// Parameters for the cliproot_clip tool.
@@ -24,6 +27,10 @@ pub struct ClipParams {
     pub title: Option<String>,
     /// Optional project id (falls back to current project)
     pub project: Option<String>,
+    /// Optional activity id for prompt-scoped provenance
+    pub activity_id: Option<String>,
+    /// Optional session id for session-scoped provenance
+    pub session_id: Option<String>,
 }
 
 fn default_source_type() -> String {
@@ -45,6 +52,10 @@ pub struct DeriveParams {
     pub agent: Option<String>,
     /// Optional project id (falls back to current project)
     pub project: Option<String>,
+    /// Optional activity id for prompt-scoped provenance
+    pub activity_id: Option<String>,
+    /// Optional session id for session-scoped provenance
+    pub session_id: Option<String>,
 }
 
 // ── cliproot_inspect ───────────────────────────────────────────────────────
@@ -164,4 +175,107 @@ pub struct DoctorParams {
     /// Minimum match confidence threshold (0.0-1.0, default: 0.4)
     #[serde(default = "default_threshold")]
     pub threshold: f64,
+}
+
+// ── cliproot_project_* ────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ProjectCreateParams {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ProjectUseParams {
+    pub project_id: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ProjectDeleteParams {
+    pub project_id: String,
+}
+
+// ── cliproot_artifact_* ───────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ArtifactAddParams {
+    pub path: Option<String>,
+    pub content: Option<String>,
+    pub file_name: Option<String>,
+    pub artifact_type: String,
+    pub mime_type: Option<String>,
+    pub id: Option<String>,
+    pub project_id: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ArtifactListParams {
+    pub project_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ArtifactGetParams {
+    pub artifact_hash: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ArtifactLinkParams {
+    pub clip_hash_or_id: String,
+    pub artifact_hash: String,
+    pub relationship: String,
+}
+
+// ── cliproot_pack_* ───────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct PackCreateParams {
+    pub project_id: Option<String>,
+    #[serde(default)]
+    pub roots: Vec<String>,
+    pub depth: Option<u32>,
+    pub output_path: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct PackImportParams {
+    pub path: String,
+    pub restore_artifacts_to: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct PackPathParams {
+    pub path: String,
+}
+
+// ── cliproot_activity_* ───────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ActivityStartParams {
+    pub activity_type: String,
+    pub project_id: Option<String>,
+    pub agent_id: Option<String>,
+    pub prompt: Option<String>,
+    pub parameters: Option<serde_json::Value>,
+    pub session_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ActivityEndParams {
+    pub activity_id: String,
+}
+
+// ── cliproot_session_* ────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionStartParams {
+    pub project_id: Option<String>,
+    pub agent_id: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionEndParams {
+    pub session_id: String,
 }

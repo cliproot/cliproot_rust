@@ -1,7 +1,9 @@
 //! ClipRootService — MCP server implementation exposing cliproot operations as tools.
 
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use cliproot_core::{
     create_clip_hash, create_text_hash, hash::ClipHashInput, matching::parse_annotation_style,
     model::*,
@@ -19,6 +21,7 @@ use rmcp::{
     tool, tool_handler, tool_router, RoleServer, ServerHandler,
 };
 use serde_json::json;
+use tokio::sync::Mutex;
 
 use crate::params::*;
 use crate::repo_handle::RepoHandle;
@@ -47,12 +50,19 @@ fn now_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
+#[derive(Debug, Default)]
+struct ActiveContext {
+    session_id: Option<String>,
+    activity_id: Option<String>,
+}
+
 // ── Service ────────────────────────────────────────────────────────────────
 
 /// MCP server that exposes Cliproot provenance operations as typed tools.
 #[derive(Clone)]
 pub struct ClipRootService {
     repo: Arc<RepoHandle>,
+    active: Arc<Mutex<ActiveContext>>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -60,8 +70,23 @@ impl ClipRootService {
     pub fn new(repo: RepoHandle) -> Self {
         Self {
             repo: Arc::new(repo),
+            active: Arc::new(Mutex::new(ActiveContext::default())),
             tool_router: Self::tool_router(),
         }
+    }
+
+    async fn current_activity_id(&self, explicit: Option<String>) -> Option<String> {
+        if explicit.is_some() {
+            return explicit;
+        }
+        self.active.lock().await.activity_id.clone()
+    }
+
+    async fn current_session_id(&self, explicit: Option<String>) -> Option<String> {
+        if explicit.is_some() {
+            return explicit;
+        }
+        self.active.lock().await.session_id.clone()
     }
 
     /// Resolve a `cliproot://` URI and return serialised JSON.
@@ -148,6 +173,8 @@ impl ClipRootService {
         &self,
         Parameters(params): Parameters<ClipParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        let activity_id = self.current_activity_id(params.activity_id.clone()).await;
+        let session_id = self.current_session_id(params.session_id.clone()).await;
         let source_type: SourceType =
             serde_json::from_value(serde_json::Value::String(params.source_type)).map_err(|e| {
                 ErrorData::invalid_params(format!("invalid source_type: {e}"), None)
@@ -193,7 +220,7 @@ impl ClipRootService {
             }),
             content: Some(params.quote),
             text_hash,
-            created_by_activity_id: None,
+            created_by_activity_id: activity_id.clone().map(CrpId),
         };
 
         let bundle = CrpBundle {
@@ -215,6 +242,15 @@ impl ClipRootService {
         };
 
         self.repo.store_bundle(bundle).await.map_err(store_err)?;
+        self.repo
+            .record_clip_tracking(
+                clip.clip_hash.0.clone(),
+                activity_id,
+                session_id,
+                clip.source_refs.clone(),
+            )
+            .await
+            .map_err(store_err)?;
         ok_json(&clip)
     }
 
@@ -227,6 +263,8 @@ impl ClipRootService {
         &self,
         Parameters(params): Parameters<DeriveParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        let activity_id = self.current_activity_id(params.activity_id.clone()).await;
+        let session_id = self.current_session_id(params.session_id.clone()).await;
         // Resolve parent hashes
         let mut parent_hashes = Vec::new();
         for ref_str in &params.from {
@@ -294,7 +332,7 @@ impl ClipRootService {
             }),
             content: Some(params.quote),
             text_hash,
-            created_by_activity_id: None,
+            created_by_activity_id: activity_id.clone().map(CrpId),
         };
 
         let transformation_type: TransformationType =
@@ -334,7 +372,288 @@ impl ClipRootService {
         };
 
         self.repo.store_bundle(bundle).await.map_err(store_err)?;
+        self.repo
+            .record_clip_tracking(
+                clip.clip_hash.0.clone(),
+                activity_id,
+                session_id,
+                parent_hashes,
+            )
+            .await
+            .map_err(store_err)?;
         ok_json(&clip)
+    }
+
+    #[tool(description = "Create a project in the local Cliproot repository.")]
+    async fn cliproot_project_create(
+        &self,
+        Parameters(params): Parameters<ProjectCreateParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let project = self
+            .repo
+            .create_project(params.id, params.name, params.description)
+            .await
+            .map_err(store_err)?;
+        ok_json(&project)
+    }
+
+    #[tool(description = "List projects in the local Cliproot repository.")]
+    async fn cliproot_project_list(
+        &self,
+        Parameters(_params): Parameters<EmptyParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let projects = self.repo.list_projects().await.map_err(store_err)?;
+        ok_json(&projects)
+    }
+
+    #[tool(description = "Set the current default project for this repository.")]
+    async fn cliproot_project_use(
+        &self,
+        Parameters(params): Parameters<ProjectUseParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.repo
+            .use_project(params.project_id.clone())
+            .await
+            .map_err(store_err)?;
+        ok_json(json!({ "projectId": params.project_id, "status": "ok" }))
+    }
+
+    #[tool(description = "Delete a project from the local repository.")]
+    async fn cliproot_project_delete(
+        &self,
+        Parameters(params): Parameters<ProjectDeleteParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.repo
+            .delete_project(params.project_id.clone())
+            .await
+            .map_err(store_err)?;
+        ok_json(json!({ "projectId": params.project_id, "status": "ok" }))
+    }
+
+    #[tool(description = "Store a file or inline content as an artifact.")]
+    async fn cliproot_artifact_add(
+        &self,
+        Parameters(params): Parameters<ArtifactAddParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let artifact_type: ArtifactType = serde_json::from_value(serde_json::Value::String(
+            params.artifact_type,
+        ))
+        .map_err(|e| ErrorData::invalid_params(format!("invalid artifact_type: {e}"), None))?;
+        let artifact = self
+            .repo
+            .add_artifact(
+                params.path.map(PathBuf::from),
+                params.content.map(|content| content.into_bytes()),
+                params.file_name,
+                artifact_type,
+                params.mime_type,
+                params.id,
+                params.project_id,
+                params.metadata,
+            )
+            .await
+            .map_err(store_err)?;
+        ok_json(&artifact)
+    }
+
+    #[tool(description = "List artifacts with optional project filtering.")]
+    async fn cliproot_artifact_list(
+        &self,
+        Parameters(params): Parameters<ArtifactListParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let artifacts = self
+            .repo
+            .list_artifacts(params.project_id)
+            .await
+            .map_err(store_err)?;
+        ok_json(&artifacts)
+    }
+
+    #[tool(description = "Get artifact metadata and inline content.")]
+    async fn cliproot_artifact_get(
+        &self,
+        Parameters(params): Parameters<ArtifactGetParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let artifact = self
+            .repo
+            .get_artifact(params.artifact_hash.clone())
+            .await
+            .map_err(store_err)?
+            .ok_or_else(|| {
+                ErrorData::invalid_params(
+                    format!("artifact not found: {}", params.artifact_hash),
+                    None,
+                )
+            })?;
+        let bytes = self
+            .repo
+            .get_artifact_bytes(params.artifact_hash)
+            .await
+            .map_err(store_err)?;
+        let content = if artifact.mime_type.starts_with("text/")
+            || artifact.mime_type == "application/json"
+        {
+            json!({ "text": String::from_utf8_lossy(&bytes) })
+        } else {
+            json!({ "contentBase64": STANDARD.encode(bytes) })
+        };
+        ok_json(json!({ "artifact": artifact, "content": content }))
+    }
+
+    #[tool(description = "Link a clip to an artifact with a typed relationship.")]
+    async fn cliproot_artifact_link(
+        &self,
+        Parameters(params): Parameters<ArtifactLinkParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let relationship: ClipArtifactRelationship = serde_json::from_value(
+            serde_json::Value::String(params.relationship),
+        )
+        .map_err(|e| ErrorData::invalid_params(format!("invalid relationship: {e}"), None))?;
+        let link = self
+            .repo
+            .link_clip_artifact(params.clip_hash_or_id, params.artifact_hash, relationship)
+            .await
+            .map_err(store_err)?;
+        ok_json(&link)
+    }
+
+    #[tool(description = "Create a .cliprootpack archive from a project or a set of root clips.")]
+    async fn cliproot_pack_create(
+        &self,
+        Parameters(params): Parameters<PackCreateParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let manifest = self
+            .repo
+            .create_pack(
+                params.project_id,
+                params.roots,
+                params.depth,
+                PathBuf::from(&params.output_path),
+            )
+            .await
+            .map_err(store_err)?;
+        ok_json(json!({ "path": params.output_path, "manifest": manifest }))
+    }
+
+    #[tool(description = "Import a .cliprootpack archive into the local repository.")]
+    async fn cliproot_pack_import(
+        &self,
+        Parameters(params): Parameters<PackImportParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let manifest = self
+            .repo
+            .import_pack(
+                PathBuf::from(&params.path),
+                params.restore_artifacts_to.map(PathBuf::from),
+            )
+            .await
+            .map_err(store_err)?;
+        ok_json(&manifest)
+    }
+
+    #[tool(description = "Inspect a .cliprootpack archive without importing it.")]
+    async fn cliproot_pack_inspect(
+        &self,
+        Parameters(params): Parameters<PackPathParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let manifest = self
+            .repo
+            .inspect_pack(PathBuf::from(params.path))
+            .await
+            .map_err(store_err)?;
+        ok_json(&manifest)
+    }
+
+    #[tool(description = "Verify the integrity of a .cliprootpack archive.")]
+    async fn cliproot_pack_verify(
+        &self,
+        Parameters(params): Parameters<PackPathParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let manifest = self
+            .repo
+            .verify_pack(PathBuf::from(params.path))
+            .await
+            .map_err(store_err)?;
+        ok_json(&manifest)
+    }
+
+    #[tool(description = "Start a prompt-scoped activity for tracked agent work.")]
+    async fn cliproot_activity_start(
+        &self,
+        Parameters(params): Parameters<ActivityStartParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let activity_type: ActivityType = serde_json::from_value(serde_json::Value::String(
+            params.activity_type,
+        ))
+        .map_err(|e| ErrorData::invalid_params(format!("invalid activity_type: {e}"), None))?;
+        let session_id = self.current_session_id(params.session_id.clone()).await;
+        let activity = self
+            .repo
+            .start_activity(
+                activity_type,
+                params.project_id,
+                params.agent_id,
+                params.prompt,
+                params.parameters,
+                session_id.clone(),
+            )
+            .await
+            .map_err(store_err)?;
+        let mut active = self.active.lock().await;
+        active.activity_id = Some(activity.id.0.clone());
+        if session_id.is_some() {
+            active.session_id = session_id;
+        }
+        ok_json(&activity)
+    }
+
+    #[tool(description = "End a tracked activity and finalize its generated/used refs.")]
+    async fn cliproot_activity_end(
+        &self,
+        Parameters(params): Parameters<ActivityEndParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let activity = self
+            .repo
+            .end_activity(params.activity_id.clone())
+            .await
+            .map_err(store_err)?;
+        let mut active = self.active.lock().await;
+        if active.activity_id.as_deref() == Some(params.activity_id.as_str()) {
+            active.activity_id = None;
+        }
+        ok_json(&activity)
+    }
+
+    #[tool(description = "Start an agent-agnostic session that can be restored as an artifact.")]
+    async fn cliproot_session_start(
+        &self,
+        Parameters(params): Parameters<SessionStartParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let session = self
+            .repo
+            .start_session(params.project_id, params.agent_id, params.metadata)
+            .await
+            .map_err(store_err)?;
+        let mut active = self.active.lock().await;
+        active.session_id = Some(session.session_id.clone());
+        ok_json(&session)
+    }
+
+    #[tool(description = "End a session and materialize its final session artifact.")]
+    async fn cliproot_session_end(
+        &self,
+        Parameters(params): Parameters<SessionEndParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let session = self
+            .repo
+            .end_session(params.session_id.clone())
+            .await
+            .map_err(store_err)?;
+        let mut active = self.active.lock().await;
+        if active.session_id.as_deref() == Some(params.session_id.as_str()) {
+            active.session_id = None;
+        }
+        ok_json(&session)
     }
 
     /// Inspect a clip by hash or ID and return its full details including content,

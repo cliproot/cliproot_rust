@@ -5,6 +5,7 @@ use cliproot_store::Repository;
 use crate::output::print_clip;
 use crate::OutputFormat;
 
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     url: &str,
     quote: &str,
@@ -13,6 +14,8 @@ pub fn run(
     document_id: Option<String>,
     project_id: Option<String>,
     title: Option<String>,
+    activity_id: Option<&str>,
+    session_id: Option<&str>,
     copy: bool,
     format: &OutputFormat,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -60,7 +63,7 @@ pub fn run(
         }),
         content: Some(quote.to_string()),
         text_hash,
-        created_by_activity_id: None,
+        created_by_activity_id: activity_id.map(|value| CrpId(value.to_string())),
     };
 
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
@@ -88,6 +91,12 @@ pub fn run(
     };
 
     repo.store_bundle(&bundle)?;
+    repo.record_clip_tracking(
+        &clip.clip_hash.0,
+        activity_id,
+        session_id,
+        &clip.source_refs,
+    )?;
     print_clip(&clip, format);
 
     if copy {

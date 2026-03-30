@@ -64,6 +64,14 @@ enum Commands {
         #[arg(long)]
         title: Option<String>,
 
+        /// Optional activity id to associate with this clip
+        #[arg(long)]
+        activity: Option<String>,
+
+        /// Optional session id to associate with this clip
+        #[arg(long)]
+        session: Option<String>,
+
         /// Also copy to the OS clipboard with provenance embedded
         #[arg(long)]
         copy: bool,
@@ -100,6 +108,14 @@ enum Commands {
         /// Optional project id (falls back to current project)
         #[arg(long)]
         project: Option<String>,
+
+        /// Optional activity id to associate with this derived clip
+        #[arg(long)]
+        activity: Option<String>,
+
+        /// Optional session id to associate with this derived clip
+        #[arg(long)]
+        session: Option<String>,
     },
 
     /// Display clip details
@@ -217,6 +233,18 @@ enum Commands {
         #[command(subcommand)]
         command: PackCommands,
     },
+
+    /// Track prompt-scoped activities
+    Activity {
+        #[command(subcommand)]
+        command: ActivityCommands,
+    },
+
+    /// Track agent sessions that can be restored as artifacts
+    Session {
+        #[command(subcommand)]
+        command: SessionCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -307,6 +335,42 @@ enum PackCommands {
     },
 }
 
+#[derive(Subcommand)]
+enum ActivityCommands {
+    Start {
+        #[arg(long)]
+        activity_type: String,
+        #[arg(long)]
+        prompt: Option<String>,
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        project: Option<String>,
+        #[arg(long)]
+        parameters: Option<String>,
+        #[arg(long)]
+        session: Option<String>,
+    },
+    End {
+        activity_id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum SessionCommands {
+    Start {
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        project: Option<String>,
+        #[arg(long)]
+        metadata: Option<String>,
+    },
+    End {
+        session_id: String,
+    },
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -320,6 +384,8 @@ fn main() {
             document_id,
             project,
             title,
+            activity,
+            session,
             copy,
         } => commands::clip::run(
             &url,
@@ -329,6 +395,8 @@ fn main() {
             document_id,
             project,
             title,
+            activity.as_deref(),
+            session.as_deref(),
             copy,
             &cli.format,
         ),
@@ -341,12 +409,16 @@ fn main() {
             activity_type,
             agent,
             project,
+            activity,
+            session,
         } => commands::derive::run(
             &from,
             &quote,
             &activity_type,
             agent.as_deref(),
             project.as_deref(),
+            activity.as_deref(),
+            session.as_deref(),
             &cli.format,
         ),
         Commands::Inspect { hash_or_id } => commands::inspect::run(&hash_or_id, &cli.format),
@@ -444,6 +516,40 @@ fn main() {
             } => commands::pack::import(&path, restore_artifacts.as_deref(), &cli.format),
             PackCommands::Inspect { path } => commands::pack::inspect(&path, &cli.format),
             PackCommands::Verify { path } => commands::pack::verify(&path, &cli.format),
+        },
+        Commands::Activity { command } => match command {
+            ActivityCommands::Start {
+                activity_type,
+                prompt,
+                agent,
+                project,
+                parameters,
+                session,
+            } => commands::activity::start(
+                &activity_type,
+                prompt,
+                agent.as_deref(),
+                project.as_deref(),
+                parameters.as_deref(),
+                session.as_deref(),
+                &cli.format,
+            ),
+            ActivityCommands::End { activity_id } => {
+                commands::activity::end(&activity_id, &cli.format)
+            }
+        },
+        Commands::Session { command } => match command {
+            SessionCommands::Start {
+                agent,
+                project,
+                metadata,
+            } => commands::session::start(
+                agent.as_deref(),
+                project.as_deref(),
+                metadata.as_deref(),
+                &cli.format,
+            ),
+            SessionCommands::End { session_id } => commands::session::end(&session_id, &cli.format),
         },
     };
 

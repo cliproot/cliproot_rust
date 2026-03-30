@@ -23,10 +23,7 @@ pub fn run(
         cb.write_plain(text)?;
         match format {
             OutputFormat::Json => {
-                println!(
-                    r#"{{"status":"copied","mode":"plain","hash":"{}"}}"#,
-                    hash_or_id
-                );
+                println!(r#"{{"status":"copied","mode":"plain","hash":"{hash_or_id}"}}"#);
             }
             _ => println!("copied (plain): {hash_or_id}"),
         }
@@ -41,10 +38,7 @@ pub fn run(
             let mode = match result {
                 WriteResult::HtmlOnly => "html",
             };
-            println!(
-                r#"{{"status":"copied","mode":"{mode}","hash":"{}"}}"#,
-                hash_or_id
-            );
+            println!(r#"{{"status":"copied","mode":"{mode}","hash":"{hash_or_id}"}}"#);
         }
         _ => match result {
             WriteResult::HtmlOnly => {

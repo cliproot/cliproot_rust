@@ -244,6 +244,136 @@ fn test_artifact_roundtrip() {
 }
 
 #[test]
+fn test_activity_and_session_recovery_roundtrip() {
+    let tmp = TempDir::new().unwrap();
+    let repo = Repository::init(tmp.path()).unwrap();
+    repo.create_project("proj_demo", "Demo", None).unwrap();
+    repo.use_project("proj_demo").unwrap();
+
+    let session = repo
+        .start_session(
+            Some("proj_demo"),
+            Some("agent-demo"),
+            Some(serde_json::json!({ "origin": "test" })),
+        )
+        .unwrap();
+    let activity = repo
+        .start_activity(
+            ActivityType::Research,
+            Some("proj_demo"),
+            Some("agent-demo"),
+            Some("Research the implementation details".to_string()),
+            Some(serde_json::json!({ "temperature": 0.1 })),
+            Some(&session.session_id),
+        )
+        .unwrap();
+
+    let (mut clip, source) = make_clip("Tracked research note", "src_session_01", "proj_demo");
+    clip.created_by_activity_id = Some(activity.id.clone());
+    let clip_hash = clip.clip_hash.0.clone();
+    let source_refs = clip.source_refs.clone();
+    repo.store_bundle(&make_bundle(
+        Some(make_project()),
+        source,
+        clip.clone(),
+        Vec::new(),
+    ))
+    .unwrap();
+    repo.record_clip_tracking(&clip_hash, Some(activity.id.as_str()), None, &source_refs)
+        .unwrap();
+
+    let reopened = Repository::open(tmp.path()).unwrap();
+    let ended_activity = reopened.end_activity(activity.id.as_str()).unwrap();
+    assert_eq!(ended_activity.id, activity.id);
+    assert!(ended_activity.ended_at.is_some());
+    assert_eq!(ended_activity.generated_clip_refs, vec![clip_hash.clone()]);
+    assert_eq!(ended_activity.used_source_refs, source_refs);
+
+    let ended_session = reopened.end_session(&session.session_id).unwrap();
+    assert_eq!(ended_session.session_id, session.session_id);
+    assert!(ended_session.ended_at.is_some());
+    assert_eq!(ended_session.activity_ids, vec![activity.id.0.clone()]);
+    assert_eq!(ended_session.generated_clip_hashes, vec![clip_hash.clone()]);
+
+    let session_artifact_hash = ended_session.artifact_hash.clone().unwrap();
+    let session_artifact = reopened
+        .get_artifact(&session_artifact_hash)
+        .unwrap()
+        .unwrap();
+    assert_eq!(session_artifact.artifact_type, ArtifactType::Session);
+
+    let exported = reopened.export_bundle(&clip_hash).unwrap();
+    assert_eq!(exported.activities.len(), 1);
+    assert_eq!(exported.activities[0].id, activity.id);
+    assert!(exported
+        .artifacts
+        .iter()
+        .any(|artifact| artifact.artifact_hash.0 == session_artifact_hash));
+    assert!(exported.clip_artifact_refs.iter().any(|link| {
+        link.clip_hash.0 == clip_hash
+            && link.artifact_hash.0 == session_artifact_hash
+            && link.relationship == ClipArtifactRelationship::AttachedTo
+    }));
+}
+
+#[test]
+fn test_pack_includes_session_artifact_links() {
+    let tmp = TempDir::new().unwrap();
+    let repo = Repository::init(tmp.path()).unwrap();
+    repo.create_project("proj_demo", "Demo", None).unwrap();
+    repo.use_project("proj_demo").unwrap();
+
+    let session = repo
+        .start_session(Some("proj_demo"), Some("agent-demo"), None)
+        .unwrap();
+    let activity = repo
+        .start_activity(
+            ActivityType::Plan,
+            Some("proj_demo"),
+            Some("agent-demo"),
+            Some("Draft the plan".to_string()),
+            None,
+            Some(&session.session_id),
+        )
+        .unwrap();
+
+    let (mut clip, source) = make_clip("Planned work item", "src_plan_01", "proj_demo");
+    clip.created_by_activity_id = Some(activity.id.clone());
+    let clip_hash = clip.clip_hash.0.clone();
+    let source_refs = clip.source_refs.clone();
+    repo.store_bundle(&make_bundle(
+        Some(make_project()),
+        source,
+        clip.clone(),
+        Vec::new(),
+    ))
+    .unwrap();
+    repo.record_clip_tracking(&clip_hash, Some(activity.id.as_str()), None, &source_refs)
+        .unwrap();
+    repo.end_activity(activity.id.as_str()).unwrap();
+    let ended_session = repo.end_session(&session.session_id).unwrap();
+    let session_artifact_hash = ended_session.artifact_hash.unwrap();
+
+    let pack_path = tmp.path().join("session.cliprootpack");
+    let manifest = repo
+        .create_pack(None, &[clip_hash.clone()], None, &pack_path)
+        .unwrap();
+    assert_eq!(manifest.counts.artifacts, 1);
+    assert_eq!(manifest.counts.links, 1);
+    assert!(manifest
+        .artifacts
+        .iter()
+        .any(|artifact| artifact.artifact_hash == session_artifact_hash));
+
+    let tmp2 = TempDir::new().unwrap();
+    let repo2 = Repository::init(tmp2.path()).unwrap();
+    repo2.import_pack(&pack_path, None).unwrap();
+    assert!(repo2.get_clip_full(&clip_hash).unwrap().is_some());
+    let imported_artifact = repo2.get_artifact(&session_artifact_hash).unwrap().unwrap();
+    assert_eq!(imported_artifact.artifact_type, ArtifactType::Session);
+}
+
+#[test]
 fn test_example_bundle_deserialization() {
     let json =
         include_str!("../../../../cliproot/schema/examples/crp-v0.0.3.document.example.json");

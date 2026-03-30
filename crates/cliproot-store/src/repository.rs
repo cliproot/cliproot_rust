@@ -15,7 +15,7 @@ use sha2::{Digest, Sha256};
 use tar::{Archive, Builder, Header};
 
 use crate::error::StoreError;
-use crate::index_db::{IndexDb, LineageNode};
+use crate::index_db::{IndexDb, LineageNode, SessionRow};
 use crate::object_store::ObjectStore;
 use crate::pack::{
     safe_restore_name, sha256_digest, PackArtifactEntry, PackCounts, PackManifest, PackObjectEntry,
@@ -37,6 +37,27 @@ pub struct Repository {
     cliproot_dir: PathBuf,
     objects: ObjectStore,
     index: IndexDb,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionRecord {
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+    pub started_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ended_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub activity_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub generated_clip_hashes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifact_hash: Option<String>,
 }
 
 impl Repository {
@@ -193,6 +214,217 @@ impl Repository {
         }
     }
 
+    fn resolve_project(&self, explicit: Option<&str>) -> Result<Option<Project>, StoreError> {
+        let Some(project_id) = self.resolve_project_id(explicit)? else {
+            return Ok(None);
+        };
+        self.index.get_project_by_id(project_id.as_str())
+    }
+
+    fn store_activity_bundle(&self, activity: &Activity) -> Result<String, StoreError> {
+        let bundle = CrpBundle {
+            protocol_version: PROTOCOL_VERSION.to_string(),
+            bundle_type: BundleType::ProvenanceExport,
+            created_at: activity
+                .ended_at
+                .clone()
+                .unwrap_or_else(|| activity.created_at.clone()),
+            project: self.resolve_project(activity.project_id.as_ref().map(|id| id.as_str()))?,
+            document: None,
+            agents: Vec::new(),
+            sources: Vec::new(),
+            clips: Vec::new(),
+            artifacts: Vec::new(),
+            clip_artifact_refs: Vec::new(),
+            activities: vec![activity.clone()],
+            edges: Vec::new(),
+            reuse_events: Vec::new(),
+            signatures: Vec::new(),
+            registry: None,
+        };
+        self.store_bundle(&bundle)
+    }
+
+    pub fn start_activity(
+        &self,
+        activity_type: ActivityType,
+        project_id: Option<&str>,
+        agent_id: Option<&str>,
+        prompt: Option<String>,
+        parameters: Option<serde_json::Value>,
+        session_id: Option<&str>,
+    ) -> Result<Activity, StoreError> {
+        if let Some(session_id) = session_id {
+            self.index
+                .get_session(session_id)?
+                .ok_or_else(|| StoreError::Other(format!("session not found: {session_id}")))?;
+        }
+
+        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let activity = Activity {
+            id: CrpId(format!("act-{}", uuid::Uuid::new_v4())),
+            activity_type,
+            project_id: self.resolve_project_id(project_id)?,
+            agent_id: agent_id.map(|value| CrpId(value.to_string())),
+            prompt,
+            parameters,
+            used_source_refs: Vec::new(),
+            generated_clip_refs: Vec::new(),
+            created_at: now,
+            ended_at: None,
+        };
+
+        self.store_activity_bundle(&activity)?;
+        if let Some(session_id) = session_id {
+            self.index
+                .link_session_activity(session_id, activity.id.as_str())?;
+        }
+        Ok(activity)
+    }
+
+    pub fn end_activity(&self, activity_id: &str) -> Result<Activity, StoreError> {
+        let mut activity = self
+            .index
+            .get_activity_by_id(activity_id)?
+            .ok_or_else(|| StoreError::Other(format!("activity not found: {activity_id}")))?;
+        activity.used_source_refs = self.index.get_activity_used_refs(activity_id)?;
+        activity.generated_clip_refs = self.index.get_activity_generated_clips(activity_id)?;
+        activity.ended_at =
+            Some(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
+        self.store_activity_bundle(&activity)?;
+        Ok(activity)
+    }
+
+    pub fn start_session(
+        &self,
+        project_id: Option<&str>,
+        agent_id: Option<&str>,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<SessionRecord, StoreError> {
+        let session_id = format!("sess-{}", uuid::Uuid::new_v4());
+        let started_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let project_id = self.resolve_project_id(project_id)?.map(|id| id.0);
+        self.index.upsert_session(&SessionRow {
+            id: session_id.clone(),
+            project_id: project_id.clone(),
+            agent_id: agent_id.map(|value| value.to_string()),
+            metadata: metadata.clone(),
+            started_at: started_at.clone(),
+            ended_at: None,
+            artifact_hash: None,
+        })?;
+        Ok(SessionRecord {
+            session_id,
+            project_id,
+            agent_id: agent_id.map(|value| value.to_string()),
+            metadata,
+            started_at,
+            ended_at: None,
+            activity_ids: Vec::new(),
+            generated_clip_hashes: Vec::new(),
+            artifact_hash: None,
+        })
+    }
+
+    pub fn end_session(&self, session_id: &str) -> Result<SessionRecord, StoreError> {
+        let session = self
+            .index
+            .get_session(session_id)?
+            .ok_or_else(|| StoreError::Other(format!("session not found: {session_id}")))?;
+        let activity_ids = self.index.get_session_activity_ids(session_id)?;
+        let generated_clip_hashes = self.index.get_session_clip_hashes(session_id)?;
+        let ended_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+
+        let record = SessionRecord {
+            session_id: session.id.clone(),
+            project_id: session.project_id.clone(),
+            agent_id: session.agent_id.clone(),
+            metadata: session.metadata.clone(),
+            started_at: session.started_at.clone(),
+            ended_at: Some(ended_at.clone()),
+            activity_ids,
+            generated_clip_hashes,
+            artifact_hash: None,
+        };
+
+        let file_name = format!("{session_id}.json");
+        let payload = serde_json::to_vec_pretty(&record)?;
+        let artifact = self.add_artifact(
+            None,
+            Some(&payload),
+            Some(&file_name),
+            ArtifactType::Session,
+            Some("application/json"),
+            Some(session_id),
+            session.project_id.as_deref(),
+            record.metadata.clone(),
+        )?;
+
+        for clip_hash in &record.generated_clip_hashes {
+            let link = ClipArtifactRef {
+                clip_hash: ContentHash(clip_hash.clone()),
+                artifact_hash: artifact.artifact_hash.clone(),
+                relationship: ClipArtifactRelationship::AttachedTo,
+            };
+            self.index.link_clip_artifact(&link)?;
+        }
+
+        self.index.upsert_session(&SessionRow {
+            id: session.id.clone(),
+            project_id: session.project_id.clone(),
+            agent_id: session.agent_id.clone(),
+            metadata: session.metadata.clone(),
+            started_at: session.started_at,
+            ended_at: Some(ended_at),
+            artifact_hash: Some(artifact.artifact_hash.0.clone()),
+        })?;
+
+        Ok(SessionRecord {
+            artifact_hash: Some(artifact.artifact_hash.0),
+            ..record
+        })
+    }
+
+    pub fn record_clip_tracking(
+        &self,
+        clip_hash: &str,
+        activity_id: Option<&str>,
+        session_id: Option<&str>,
+        used_refs: &[String],
+    ) -> Result<(), StoreError> {
+        let mut session_ids = BTreeSet::new();
+        if let Some(session_id) = session_id {
+            self.index
+                .get_session(session_id)?
+                .ok_or_else(|| StoreError::Other(format!("session not found: {session_id}")))?;
+            session_ids.insert(session_id.to_string());
+        }
+
+        if let Some(activity_id) = activity_id {
+            self.index
+                .get_activity_by_id(activity_id)?
+                .ok_or_else(|| StoreError::Other(format!("activity not found: {activity_id}")))?;
+            self.index
+                .link_activity_generated_clip(activity_id, clip_hash)?;
+            for used_ref in used_refs {
+                self.index.link_activity_used_ref(activity_id, used_ref)?;
+            }
+            for linked_session_id in self.index.get_session_ids_for_activity(activity_id)? {
+                session_ids.insert(linked_session_id);
+            }
+        }
+
+        for session_id in session_ids {
+            self.index.link_session_clip(&session_id, clip_hash)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn get_artifact_bytes(&self, artifact_hash: &str) -> Result<Vec<u8>, StoreError> {
+        self.objects.read_artifact(artifact_hash)
+    }
+
     pub fn store_bundle(&self, bundle: &CrpBundle) -> Result<String, StoreError> {
         let bundle_hash = if let Some(clip) = bundle.clips.first() {
             clip.clip_hash.0.clone()
@@ -344,6 +576,12 @@ impl Repository {
                 }
             }
         }
+        let activity_ids = self
+            .index
+            .get_activity_ids_for_clip_hashes(&all_clip_hashes)?;
+        for bundle_hash in self.index.get_bundle_hashes_for_activities(&activity_ids)? {
+            bundle_hashes.insert(bundle_hash);
+        }
 
         let mut documents = BTreeMap::<String, Document>::new();
         let mut agents = BTreeMap::<String, Agent>::new();
@@ -433,6 +671,7 @@ impl Repository {
         self.store_bundle(bundle)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_artifact(
         &self,
         path: Option<&Path>,
@@ -576,7 +815,7 @@ impl Repository {
                 .collect::<BTreeSet<_>>()
                 .into_iter()
                 .collect::<Vec<_>>();
-            let included = self.collect_closure(root_hashes.iter().cloned().collect(), None)?;
+            let included = self.collect_closure(root_hashes.to_vec(), None)?;
             (
                 Some(project),
                 PackRoots {
@@ -616,6 +855,13 @@ impl Repository {
                 );
                 clip_links.entry(key).or_insert(link);
             }
+        }
+        let included_clip_hashes_vec = included_clip_hashes.iter().cloned().collect::<Vec<_>>();
+        let activity_ids = self
+            .index
+            .get_activity_ids_for_clip_hashes(&included_clip_hashes_vec)?;
+        for bundle_hash in self.index.get_bundle_hashes_for_activities(&activity_ids)? {
+            bundle_hashes.insert(bundle_hash);
         }
 
         let mut artifacts = BTreeMap::<String, Artifact>::new();

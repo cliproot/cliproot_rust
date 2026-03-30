@@ -129,6 +129,11 @@ The standalone `cliproot-mcp` binary is also still available for backward compat
 |------|-------------|
 | `cliproot_clip` | Capture a source clip from a URL with exact quoted text |
 | `cliproot_derive` | Derive a new clip from one or more parent clips |
+| `cliproot_project_create/list/use/delete` | Manage project scopes |
+| `cliproot_artifact_add/list/get/link` | Store and retrieve artifacts |
+| `cliproot_pack_create/import/inspect/verify` | Create and restore `.cliprootpack` archives |
+| `cliproot_activity_start/end` | Track prompt-scoped activities |
+| `cliproot_session_start/end` | Track agent sessions and finalize session artifacts |
 | `cliproot_inspect` | Inspect a clip by hash or ID |
 | `cliproot_trace` | Show full ancestor lineage through `wasDerivedFrom` edges |
 | `cliproot_verify` | Verify hash integrity of one clip or all clips |
@@ -159,7 +164,7 @@ This creates:
 | **Universal (Codex, Gemini CLI, etc.)** | `.agents/skills/cliproot-research/` |
 | **Windsurf** | `.windsurf/rules/cliproot-research.md` |
 
-The skill teaches agents to follow the **CAPTURE → SYNTHESIZE → VALIDATE → OUTPUT** workflow: clip sources, derive insights, verify integrity, and produce cited documents with traceable lineage.
+The skill teaches agents to follow a **PROJECT → SESSION → ACTIVITY → CAPTURE → SYNTHESIZE → VALIDATE → OUTPUT** workflow so prompts, generated clips, artifacts, and restorable session context stay linked.
 
 Skill source files live in [`skills/cliproot-research/`](skills/cliproot-research/) and are embedded in the binary at build time.
 

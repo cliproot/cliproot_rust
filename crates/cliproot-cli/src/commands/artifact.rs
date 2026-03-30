@@ -5,6 +5,7 @@ use cliproot_store::Repository;
 
 use crate::OutputFormat;
 
+#[allow(clippy::too_many_arguments)]
 pub fn add(
     path: Option<&str>,
     content: Option<&str>,

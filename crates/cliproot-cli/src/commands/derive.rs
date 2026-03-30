@@ -4,12 +4,15 @@ use cliproot_store::Repository;
 use crate::output::print_clip;
 use crate::OutputFormat;
 
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     from: &[String],
     quote: &str,
     activity_type_str: &str,
     agent: Option<&str>,
     project_id: Option<&str>,
+    activity_id: Option<&str>,
+    session_id: Option<&str>,
     format: &OutputFormat,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let repo = Repository::discover()?;
@@ -80,7 +83,7 @@ pub fn run(
         }),
         content: Some(quote.to_string()),
         text_hash,
-        created_by_activity_id: None,
+        created_by_activity_id: activity_id.map(|value| CrpId(value.to_string())),
     };
 
     // Parse transformation type from activity type
@@ -129,6 +132,7 @@ pub fn run(
     };
 
     repo.store_bundle(&bundle)?;
+    repo.record_clip_tracking(&clip.clip_hash.0, activity_id, session_id, &parent_hashes)?;
     print_clip(&clip, format);
 
     Ok(())

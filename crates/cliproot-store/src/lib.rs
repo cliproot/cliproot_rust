@@ -8,4 +8,4 @@ pub use error::StoreError;
 pub use pack::{
     PackArtifactEntry, PackCounts, PackManifest, PackObjectEntry, PackRootMode, PackRoots,
 };
-pub use repository::Repository;
+pub use repository::{Repository, SessionRecord};

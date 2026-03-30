@@ -1,6 +1,6 @@
 # Cliproot MCP Tool Reference
 
-Complete parameter documentation for all 11 Cliproot MCP tools.
+Complete parameter documentation for the Phase 3 Cliproot MCP tools.
 
 ---
 
@@ -16,6 +16,9 @@ Capture a source clip from a URL with exact quoted text.
 | `id` | string | no | — | Stable human-readable clip ID (e.g. `"clip-redis-001"`) |
 | `document_id` | string | no | — | Document ID to group this clip with others |
 | `title` | string | no | — | Human-readable title for the source |
+| `project` | string | no | — | Project ID override |
+| `activity_id` | string | no | — | Activity ID for prompt-scoped provenance |
+| `session_id` | string | no | — | Session ID for session-scoped provenance |
 
 ---
 
@@ -29,6 +32,70 @@ Create a derived clip from one or more parent clips.
 | `quote` | string | yes | — | The derived text content |
 | `transformation_type` | string | yes | — | One of: `verbatim`, `quote`, `summary`, `paraphrase`, `translate`, `combine`, `edit`, `ai_generate`, `unknown` |
 | `agent` | string | no | — | Agent ID (e.g. model identifier like `"claude-opus-4"`) |
+| `project` | string | no | — | Project ID override |
+| `activity_id` | string | no | — | Activity ID for prompt-scoped provenance |
+| `session_id` | string | no | — | Session ID for session-scoped provenance |
+
+---
+
+## cliproot_project_create / list / use / delete
+
+Project management tools for scoping work before clips, artifacts, and packs are created.
+
+---
+
+## cliproot_artifact_add / list / get / link
+
+Artifact management tools for storing markdown, JSON, prompt, session, and other file content.
+
+---
+
+## cliproot_pack_create / import / inspect / verify
+
+Pack management tools for creating and restoring `.cliprootpack` archives.
+
+---
+
+## cliproot_activity_start / end
+
+Start and end prompt-scoped activities. Activities capture:
+
+- `activity_type`
+- `prompt`
+- optional `parameters`
+- generated clip hashes
+- used refs gathered during the activity
+
+---
+
+## cliproot_session_start / end
+
+Start and end restorable agent sessions. Session end materializes a `session` artifact and links it to generated clips with `attached_to`.
+
+---
+
+## cliproot_inspect / trace / list / search
+
+Exploration and lineage tools for understanding the current provenance graph before creating new work.
+
+Use these to:
+
+- inspect full clip metadata
+- trace derivation chains
+- search existing content
+- avoid duplicating already-grounded research
+
+---
+
+## cliproot_verify / doctor
+
+Validation tools for checking integrity and provenance coverage before final output.
+
+---
+
+## cliproot_annotate / cite / export
+
+Output tools for surfacing provenance in final deliverables and sharing provenance lineage with others.
 
 ---
 

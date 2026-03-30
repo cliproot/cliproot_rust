@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS clips (
     id TEXT,
     project_id TEXT,
     document_id TEXT,
+    created_by_activity_id TEXT,
     text_hash TEXT NOT NULL,
     content TEXT,
     bundle_hash TEXT NOT NULL,
@@ -74,7 +75,20 @@ CREATE TABLE IF NOT EXISTS activities (
     prompt TEXT,
     parameters TEXT,
     created_at TEXT NOT NULL,
-    ended_at TEXT
+    ended_at TEXT,
+    bundle_hash TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS activity_generated_clips (
+    activity_id TEXT NOT NULL,
+    clip_hash TEXT NOT NULL,
+    PRIMARY KEY (activity_id, clip_hash)
+);
+
+CREATE TABLE IF NOT EXISTS activity_used_refs (
+    activity_id TEXT NOT NULL,
+    used_ref TEXT NOT NULL,
+    PRIMARY KEY (activity_id, used_ref)
 );
 
 CREATE TABLE IF NOT EXISTS artifacts (
@@ -97,14 +111,43 @@ CREATE TABLE IF NOT EXISTS clip_artifact_refs (
     PRIMARY KEY (clip_hash, artifact_hash, relationship)
 );
 
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    agent_id TEXT,
+    metadata TEXT,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    artifact_hash TEXT
+);
+
+CREATE TABLE IF NOT EXISTS session_activity_refs (
+    session_id TEXT NOT NULL,
+    activity_id TEXT NOT NULL,
+    PRIMARY KEY (session_id, activity_id)
+);
+
+CREATE TABLE IF NOT EXISTS session_clip_refs (
+    session_id TEXT NOT NULL,
+    clip_hash TEXT NOT NULL,
+    PRIMARY KEY (session_id, clip_hash)
+);
+
 CREATE INDEX IF NOT EXISTS idx_edges_subject ON edges(subject_ref);
 CREATE INDEX IF NOT EXISTS idx_edges_object ON edges(object_ref);
 CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(edge_type);
 CREATE INDEX IF NOT EXISTS idx_clips_document ON clips(document_id);
 CREATE INDEX IF NOT EXISTS idx_clips_id ON clips(id);
 CREATE INDEX IF NOT EXISTS idx_clips_project ON clips(project_id);
+CREATE INDEX IF NOT EXISTS idx_clips_created_by_activity ON clips(created_by_activity_id);
 CREATE INDEX IF NOT EXISTS idx_activities_project ON activities(project_id);
+CREATE INDEX IF NOT EXISTS idx_activity_generated_clips_activity ON activity_generated_clips(activity_id);
+CREATE INDEX IF NOT EXISTS idx_activity_generated_clips_clip ON activity_generated_clips(clip_hash);
+CREATE INDEX IF NOT EXISTS idx_activity_used_refs_activity ON activity_used_refs(activity_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_project ON artifacts(project_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
+CREATE INDEX IF NOT EXISTS idx_session_activity_refs_session ON session_activity_refs(session_id);
+CREATE INDEX IF NOT EXISTS idx_session_clip_refs_session ON session_clip_refs(session_id);
 "#;
 
 pub struct IndexDb {
@@ -121,10 +164,12 @@ impl IndexDb {
     pub fn init(&self) -> Result<(), StoreError> {
         self.conn.execute_batch(SCHEMA)?;
         self.add_column_if_missing("clips", "project_id", "TEXT")?;
+        self.add_column_if_missing("clips", "created_by_activity_id", "TEXT")?;
         self.add_column_if_missing("activities", "project_id", "TEXT")?;
         self.add_column_if_missing("activities", "prompt", "TEXT")?;
         self.add_column_if_missing("activities", "parameters", "TEXT")?;
         self.add_column_if_missing("activities", "ended_at", "TEXT")?;
+        self.add_column_if_missing("activities", "bundle_hash", "TEXT NOT NULL DEFAULT ''")?;
         Ok(())
     }
 
@@ -207,12 +252,13 @@ impl IndexDb {
 
         for clip in &bundle.clips {
             tx.execute(
-                "INSERT OR REPLACE INTO clips (clip_hash, id, project_id, document_id, text_hash, content, bundle_hash) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                "INSERT OR REPLACE INTO clips (clip_hash, id, project_id, document_id, created_by_activity_id, text_hash, content, bundle_hash) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     clip.clip_hash.0,
                     clip.id.as_ref().map(|i| &i.0),
                     clip.project_id.as_ref().map(|i| &i.0),
                     clip.document_id.as_ref().map(|i| &i.0),
+                    clip.created_by_activity_id.as_ref().map(|i| &i.0),
                     clip.text_hash.0,
                     clip.content,
                     bundle_hash,
@@ -248,7 +294,7 @@ impl IndexDb {
 
         for activity in &bundle.activities {
             tx.execute(
-                "INSERT OR REPLACE INTO activities (id, project_id, activity_type, agent_id, prompt, parameters, created_at, ended_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                "INSERT OR REPLACE INTO activities (id, project_id, activity_type, agent_id, prompt, parameters, created_at, ended_at, bundle_hash) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     activity.id.0,
                     activity.project_id.as_ref().map(|p| &p.0),
@@ -258,8 +304,31 @@ impl IndexDb {
                     activity.parameters.as_ref().map(serde_json::to_string).transpose()?,
                     activity.created_at,
                     activity.ended_at,
+                    bundle_hash,
                 ],
             )?;
+
+            tx.execute(
+                "DELETE FROM activity_generated_clips WHERE activity_id = ?1",
+                params![activity.id.0],
+            )?;
+            for clip_hash in &activity.generated_clip_refs {
+                tx.execute(
+                    "INSERT OR REPLACE INTO activity_generated_clips (activity_id, clip_hash) VALUES (?1, ?2)",
+                    params![activity.id.0, clip_hash],
+                )?;
+            }
+
+            tx.execute(
+                "DELETE FROM activity_used_refs WHERE activity_id = ?1",
+                params![activity.id.0],
+            )?;
+            for used_ref in &activity.used_source_refs {
+                tx.execute(
+                    "INSERT OR REPLACE INTO activity_used_refs (activity_id, used_ref) VALUES (?1, ?2)",
+                    params![activity.id.0, used_ref],
+                )?;
+            }
         }
 
         for artifact in &bundle.artifacts {
@@ -350,7 +419,7 @@ impl IndexDb {
 
     pub fn find_clip_by_hash(&self, hash: &str) -> Result<Option<ClipRow>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT clip_hash, id, project_id, document_id, text_hash, content, bundle_hash FROM clips WHERE clip_hash = ?1",
+            "SELECT clip_hash, id, project_id, document_id, created_by_activity_id, text_hash, content, bundle_hash FROM clips WHERE clip_hash = ?1",
         )?;
         stmt.query_row(params![hash], |row| {
             Ok(ClipRow {
@@ -358,9 +427,10 @@ impl IndexDb {
                 id: row.get(1)?,
                 project_id: row.get(2)?,
                 document_id: row.get(3)?,
-                text_hash: row.get(4)?,
-                content: row.get(5)?,
-                bundle_hash: row.get(6)?,
+                created_by_activity_id: row.get(4)?,
+                text_hash: row.get(5)?,
+                content: row.get(6)?,
+                bundle_hash: row.get(7)?,
             })
         })
         .optional()
@@ -369,7 +439,7 @@ impl IndexDb {
 
     pub fn find_clip_by_id(&self, id: &str) -> Result<Option<ClipRow>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT clip_hash, id, project_id, document_id, text_hash, content, bundle_hash FROM clips WHERE id = ?1",
+            "SELECT clip_hash, id, project_id, document_id, created_by_activity_id, text_hash, content, bundle_hash FROM clips WHERE id = ?1",
         )?;
         stmt.query_row(params![id], |row| {
             Ok(ClipRow {
@@ -377,9 +447,10 @@ impl IndexDb {
                 id: row.get(1)?,
                 project_id: row.get(2)?,
                 document_id: row.get(3)?,
-                text_hash: row.get(4)?,
-                content: row.get(5)?,
-                bundle_hash: row.get(6)?,
+                created_by_activity_id: row.get(4)?,
+                text_hash: row.get(5)?,
+                content: row.get(6)?,
+                bundle_hash: row.get(7)?,
             })
         })
         .optional()
@@ -397,7 +468,7 @@ impl IndexDb {
 
         if let Some(doc_id) = document_id {
             let mut stmt = self.conn.prepare(
-                "SELECT clip_hash, id, project_id, document_id, text_hash, content, bundle_hash FROM clips WHERE document_id = ?1 AND (?2 IS NULL OR project_id = ?2) LIMIT ?3",
+                "SELECT clip_hash, id, project_id, document_id, created_by_activity_id, text_hash, content, bundle_hash FROM clips WHERE document_id = ?1 AND (?2 IS NULL OR project_id = ?2) LIMIT ?3",
             )?;
             let rows = stmt.query_map(params![doc_id, project_id, limit], |row| {
                 Ok(ClipRow {
@@ -405,9 +476,10 @@ impl IndexDb {
                     id: row.get(1)?,
                     project_id: row.get(2)?,
                     document_id: row.get(3)?,
-                    text_hash: row.get(4)?,
-                    content: row.get(5)?,
-                    bundle_hash: row.get(6)?,
+                    created_by_activity_id: row.get(4)?,
+                    text_hash: row.get(5)?,
+                    content: row.get(6)?,
+                    bundle_hash: row.get(7)?,
                 })
             })?;
             return rows.collect::<Result<Vec<_>, _>>().map_err(Into::into);
@@ -415,7 +487,7 @@ impl IndexDb {
 
         if let Some(src_type) = source_type {
             let mut stmt = self.conn.prepare(
-                "SELECT DISTINCT c.clip_hash, c.id, c.project_id, c.document_id, c.text_hash, c.content, c.bundle_hash
+                "SELECT DISTINCT c.clip_hash, c.id, c.project_id, c.document_id, c.created_by_activity_id, c.text_hash, c.content, c.bundle_hash
                  FROM clips c
                  JOIN clip_source_refs csr ON c.clip_hash = csr.clip_hash
                  JOIN sources s ON csr.source_ref = s.id
@@ -428,16 +500,17 @@ impl IndexDb {
                     id: row.get(1)?,
                     project_id: row.get(2)?,
                     document_id: row.get(3)?,
-                    text_hash: row.get(4)?,
-                    content: row.get(5)?,
-                    bundle_hash: row.get(6)?,
+                    created_by_activity_id: row.get(4)?,
+                    text_hash: row.get(5)?,
+                    content: row.get(6)?,
+                    bundle_hash: row.get(7)?,
                 })
             })?;
             return rows.collect::<Result<Vec<_>, _>>().map_err(Into::into);
         }
 
         let mut stmt = self.conn.prepare(
-            "SELECT clip_hash, id, project_id, document_id, text_hash, content, bundle_hash
+            "SELECT clip_hash, id, project_id, document_id, created_by_activity_id, text_hash, content, bundle_hash
              FROM clips
              WHERE (?1 IS NULL OR project_id = ?1)
              LIMIT ?2",
@@ -448,9 +521,10 @@ impl IndexDb {
                 id: row.get(1)?,
                 project_id: row.get(2)?,
                 document_id: row.get(3)?,
-                text_hash: row.get(4)?,
-                content: row.get(5)?,
-                bundle_hash: row.get(6)?,
+                created_by_activity_id: row.get(4)?,
+                text_hash: row.get(5)?,
+                content: row.get(6)?,
+                bundle_hash: row.get(7)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -526,10 +600,225 @@ impl IndexDb {
                     selectors: None,
                     content: row.content,
                     text_hash: cliproot_core::ContentHash(row.text_hash),
-                    created_by_activity_id: None,
+                    created_by_activity_id: row.created_by_activity_id.map(cliproot_core::CrpId),
                 }))
             }
         }
+    }
+
+    pub fn get_activity_by_id(
+        &self,
+        activity_id: &str,
+    ) -> Result<Option<cliproot_core::Activity>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, project_id, activity_type, agent_id, prompt, parameters, created_at, ended_at
+             FROM activities
+             WHERE id = ?1",
+        )?;
+        let row = stmt
+            .query_row(params![activity_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, Option<String>>(7)?,
+                ))
+            })
+            .optional()?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+
+        Ok(Some(cliproot_core::Activity {
+            id: cliproot_core::CrpId(row.0),
+            project_id: row.1.map(cliproot_core::CrpId),
+            activity_type: serde_json::from_value(serde_json::Value::String(row.2))
+                .unwrap_or(cliproot_core::ActivityType::Research),
+            agent_id: row.3.map(cliproot_core::CrpId),
+            prompt: row.4,
+            parameters: row.5.and_then(|json| serde_json::from_str(&json).ok()),
+            used_source_refs: self.get_activity_used_refs(activity_id)?,
+            generated_clip_refs: self.get_activity_generated_clips(activity_id)?,
+            created_at: row.6,
+            ended_at: row.7,
+        }))
+    }
+
+    pub fn get_activity_bundle_hash(
+        &self,
+        activity_id: &str,
+    ) -> Result<Option<String>, StoreError> {
+        self.conn
+            .query_row(
+                "SELECT bundle_hash FROM activities WHERE id = ?1",
+                params![activity_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
+    pub fn get_activity_generated_clips(
+        &self,
+        activity_id: &str,
+    ) -> Result<Vec<String>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT clip_hash FROM activity_generated_clips WHERE activity_id = ?1 ORDER BY clip_hash",
+        )?;
+        let rows = stmt.query_map(params![activity_id], |row| row.get(0))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn get_activity_used_refs(&self, activity_id: &str) -> Result<Vec<String>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT used_ref FROM activity_used_refs WHERE activity_id = ?1 ORDER BY used_ref",
+        )?;
+        let rows = stmt.query_map(params![activity_id], |row| row.get(0))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn link_activity_generated_clip(
+        &self,
+        activity_id: &str,
+        clip_hash: &str,
+    ) -> Result<(), StoreError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO activity_generated_clips (activity_id, clip_hash) VALUES (?1, ?2)",
+            params![activity_id, clip_hash],
+        )?;
+        Ok(())
+    }
+
+    pub fn link_activity_used_ref(
+        &self,
+        activity_id: &str,
+        used_ref: &str,
+    ) -> Result<(), StoreError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO activity_used_refs (activity_id, used_ref) VALUES (?1, ?2)",
+            params![activity_id, used_ref],
+        )?;
+        Ok(())
+    }
+
+    pub fn upsert_session(&self, session: &SessionRow) -> Result<(), StoreError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO sessions (id, project_id, agent_id, metadata, started_at, ended_at, artifact_hash) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                session.id,
+                session.project_id,
+                session.agent_id,
+                session.metadata.as_ref().map(serde_json::to_string).transpose()?,
+                session.started_at,
+                session.ended_at,
+                session.artifact_hash,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_session(&self, session_id: &str) -> Result<Option<SessionRow>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, project_id, agent_id, metadata, started_at, ended_at, artifact_hash
+             FROM sessions
+             WHERE id = ?1",
+        )?;
+        stmt.query_row(params![session_id], |row| {
+            Ok(SessionRow {
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                agent_id: row.get(2)?,
+                metadata: row
+                    .get::<_, Option<String>>(3)?
+                    .and_then(|json| serde_json::from_str(&json).ok()),
+                started_at: row.get(4)?,
+                ended_at: row.get(5)?,
+                artifact_hash: row.get(6)?,
+            })
+        })
+        .optional()
+        .map_err(Into::into)
+    }
+
+    pub fn link_session_activity(
+        &self,
+        session_id: &str,
+        activity_id: &str,
+    ) -> Result<(), StoreError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO session_activity_refs (session_id, activity_id) VALUES (?1, ?2)",
+            params![session_id, activity_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn link_session_clip(&self, session_id: &str, clip_hash: &str) -> Result<(), StoreError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO session_clip_refs (session_id, clip_hash) VALUES (?1, ?2)",
+            params![session_id, clip_hash],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_session_activity_ids(&self, session_id: &str) -> Result<Vec<String>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT activity_id FROM session_activity_refs WHERE session_id = ?1 ORDER BY activity_id",
+        )?;
+        let rows = stmt.query_map(params![session_id], |row| row.get(0))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn get_session_ids_for_activity(
+        &self,
+        activity_id: &str,
+    ) -> Result<Vec<String>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT session_id FROM session_activity_refs WHERE activity_id = ?1 ORDER BY session_id",
+        )?;
+        let rows = stmt.query_map(params![activity_id], |row| row.get(0))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn get_session_clip_hashes(&self, session_id: &str) -> Result<Vec<String>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT clip_hash FROM session_clip_refs WHERE session_id = ?1 ORDER BY clip_hash",
+        )?;
+        let rows = stmt.query_map(params![session_id], |row| row.get(0))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn get_activity_ids_for_clip_hashes(
+        &self,
+        clip_hashes: &[String],
+    ) -> Result<Vec<String>, StoreError> {
+        let mut ids = std::collections::BTreeSet::new();
+        for clip_hash in clip_hashes {
+            if let Some(row) = self.find_clip_by_hash(clip_hash)? {
+                if let Some(activity_id) = row.created_by_activity_id {
+                    ids.insert(activity_id);
+                }
+            }
+        }
+        Ok(ids.into_iter().collect())
+    }
+
+    pub fn get_bundle_hashes_for_activities(
+        &self,
+        activity_ids: &[String],
+    ) -> Result<Vec<String>, StoreError> {
+        let mut hashes = std::collections::BTreeSet::new();
+        for activity_id in activity_ids {
+            if let Some(bundle_hash) = self.get_activity_bundle_hash(activity_id)? {
+                if !bundle_hash.is_empty() {
+                    hashes.insert(bundle_hash);
+                }
+            }
+        }
+        Ok(hashes.into_iter().collect())
     }
 
     pub fn get_edges_for_subject(&self, subject_ref: &str) -> Result<Vec<Edge>, StoreError> {
@@ -702,6 +991,7 @@ pub struct ClipRow {
     pub id: Option<String>,
     pub project_id: Option<String>,
     pub document_id: Option<String>,
+    pub created_by_activity_id: Option<String>,
     pub text_hash: String,
     pub content: Option<String>,
     pub bundle_hash: String,
@@ -725,4 +1015,15 @@ pub struct LineageNode {
     pub parent_hash: String,
     pub transformation_type: String,
     pub depth: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct SessionRow {
+    pub id: String,
+    pub project_id: Option<String>,
+    pub agent_id: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+    pub artifact_hash: Option<String>,
 }
