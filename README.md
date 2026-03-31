@@ -1,10 +1,12 @@
 # cliproot-rust
 
-Rust implementation of the [ClipRoot Protocol (CRP)](../cliproot/schema/crp-v0.0.3.schema.json) — a local-first provenance engine for content-addressed clips, project-scoped provenance graphs, and attached artifacts.
+The native runtime for the [ClipRoot Protocol (CRP)](https://github.com/cliproot/cliproot) — a CLI, MCP server, and storage engine for provenance-aware content reuse.
 
 ## Overview
 
-`cliproot` is a CLI for managing **clips** and **artifacts** inside named projects. Clips are content-addressed provenance records that link quoted text back to its source and track how content was derived or transformed. Artifacts are content-addressed files such as markdown plans, prompts, or JSON notes. Every clip and artifact gets a stable `sha256-*` hash that can be verified offline without a registry.
+`cliproot` is a single binary that provides a CLI (20+ subcommands), an MCP server (24+ tools for AI agents), hybrid storage (filesystem objects + SQLite index), OS clipboard integration, and `.cliprootpack` archive support. It implements [CRP v0.0.3](https://github.com/cliproot/cliproot/tree/main/spec) — the same protocol defined by the canonical [JSON Schema](https://github.com/cliproot/cliproot/tree/main/schema) and [TypeScript packages](https://github.com/cliproot/cliproot/tree/main/packages) in the main ClipRoot repository.
+
+Clips are content-addressed provenance records that link quoted text back to its source and track how content was derived or transformed. Artifacts are content-addressed files such as markdown plans, prompts, or JSON notes. Every clip and artifact gets a stable `sha256-*` hash that can be verified offline without a registry.
 
 ```
 clip (text + source) ──[summary]──► derived clip ──[paraphrase]──► another clip
@@ -488,82 +490,28 @@ git push origin v0.1.0
 
 The release workflow builds all platform binaries and publishes them to [GitHub Releases](https://github.com/cliproot/cliproot_rust/releases).
 
-## Protocol version
+## Protocol
 
-Implements **CRP v0.0.3**. Key features of this version:
+This repository implements **[CRP v0.0.3](https://github.com/cliproot/cliproot/tree/main/spec)** (Draft). The protocol specification, canonical JSON Schemas, and TypeScript implementation live in the [cliproot/cliproot](https://github.com/cliproot/cliproot) repository.
+
+| Resource | Location |
+|---|---|
+| Protocol specification | [`cliproot/spec/`](https://github.com/cliproot/cliproot/tree/main/spec) |
+| Canonical JSON Schema | [`cliproot/schema/`](https://github.com/cliproot/cliproot/tree/main/schema) |
+| TypeScript packages | [`cliproot/packages/`](https://github.com/cliproot/cliproot/tree/main/packages) |
+| Web playground | [cliproot.github.io/cliproot](https://cliproot.github.io/cliproot/) |
+
+Key features of CRP v0.0.3:
 - top-level `project` metadata with single-project ownership via `projectId`
 - generalized `edges` replacing `derivationEdges`
 - top-level `artifacts` plus `clipArtifactRefs`
 - extended `activities` with `prompt`, `parameters`, and `endedAt`
 - bundle types: `document`, `clipboard`, `reuse-event`, `derivation`, `provenance-export`
 
-## Local smoke test
+## Contributing
 
-Use this sequence to exercise the new project + artifact flow locally:
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines, including how this repository relates to the main [cliproot/cliproot](https://github.com/cliproot/cliproot) repo.
 
-```bash
-cd /home/jwhitwill/all_cliproot/cliproot_rust
-cargo build -p cliproot-cli
+## License
 
-mkdir -p /tmp/cliproot-smoke
-cd /tmp/cliproot-smoke
-
-/home/jwhitwill/all_cliproot/cliproot_rust/target/debug/cliproot init
-/home/jwhitwill/all_cliproot/cliproot_rust/target/debug/cliproot project create \
-  --id auth-refactor \
-  --name "Auth Refactor"
-/home/jwhitwill/all_cliproot/cliproot_rust/target/debug/cliproot project use auth-refactor
-
-/home/jwhitwill/all_cliproot/cliproot_rust/target/debug/cliproot clip \
-  --url https://example.com/oauth \
-  --quote "PKCE mitigates authorization code interception attacks."
-```
-
-Copy the clip hash from that output, then continue:
-
-```bash
-/home/jwhitwill/all_cliproot/cliproot_rust/target/debug/cliproot derive \
-  --from sha256-REPLACE_ME \
-  --quote "Use PKCE for public clients." \
-  --activity-type summary
-
-printf '# Plan\n\n- Research OAuth\n- Implement callback\n' > plan.md
-/home/jwhitwill/all_cliproot/cliproot_rust/target/debug/cliproot artifact add \
-  plan.md \
-  --artifact-type markdown
-
-/home/jwhitwill/all_cliproot/cliproot_rust/target/debug/cliproot list --project auth-refactor --format table
-/home/jwhitwill/all_cliproot/cliproot_rust/target/debug/cliproot artifact list --project auth-refactor
-```
-
-Then:
-
-1. Copy the derived clip hash and the artifact hash, then link them:
-
-```bash
-/home/jwhitwill/all_cliproot/cliproot_rust/target/debug/cliproot artifact link \
-  sha256-DERIVED_CLIP \
-  sha256-ARTIFACT \
-  --relationship cited_in
-```
-
-2. Export the derived clip lineage and inspect the bundle:
-
-```bash
-/home/jwhitwill/all_cliproot/cliproot_rust/target/debug/cliproot export sha256-DERIVED_CLIP -o bundle.json
-cat bundle.json
-```
-
-3. Restore the artifact:
-
-```bash
-mkdir restored
-/home/jwhitwill/all_cliproot/cliproot_rust/target/debug/cliproot artifact restore sha256-ARTIFACT --output restored/
-ls restored
-```
-
-4. Optional MCP smoke test:
-
-```bash
-/home/jwhitwill/all_cliproot/cliproot_rust/target/debug/cliproot mcp --path /tmp/cliproot-smoke
-```
+Apache License 2.0 — see [LICENSE](LICENSE) for details.
