@@ -41,4 +41,12 @@ jobs:
         with:
           toolchain: "1.88.0"
       - uses: Swatinem/rust-cache@v2
+      - name: Download CRP example schema
+        run: |
+          mkdir -p /tmp/crp-schema
+          curl -fsSL \
+            https://cliproot.github.io/cliproot/schema/examples/crp-v0.0.3.document.example.json \
+            -o /tmp/crp-schema/crp-v0.0.3.document.example.json
       - run: cargo test --workspace
+        env:
+          CRP_EXAMPLE_JSON_PATH: /tmp/crp-schema/crp-v0.0.3.document.example.json

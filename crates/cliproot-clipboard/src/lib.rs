@@ -1,5 +1,5 @@
-pub mod html;
 mod error;
+pub mod html;
 
 pub use error::ClipboardError;
 

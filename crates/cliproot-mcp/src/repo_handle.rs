@@ -5,10 +5,15 @@
 //! a blocking OS thread owns the Repository exclusively and processes commands
 //! sent from async tool handlers.
 
+use std::path::PathBuf;
+
 use cliproot_core::matching::{AnnotateResult, AnnotationStyle, Citation, DoctorResult};
-use cliproot_core::model::{Clip, CrpBundle};
+use cliproot_core::model::{
+    Activity, Artifact, ArtifactType, Clip, ClipArtifactRef, ClipArtifactRelationship, CrpBundle,
+    Project,
+};
 use cliproot_store::index_db::LineageNode;
-use cliproot_store::{Repository, StoreError};
+use cliproot_store::{PackManifest, Repository, SessionRecord, StoreError};
 use tokio::sync::{mpsc, oneshot};
 
 type Tx<T> = oneshot::Sender<Result<T, StoreError>>;
@@ -34,6 +39,7 @@ pub enum RepoCmd {
     ListClips {
         document_id: Option<String>,
         source_type: Option<String>,
+        project_id: Option<String>,
         limit: Option<u32>,
         tx: Tx<Vec<Clip>>,
     },
@@ -68,6 +74,102 @@ pub enum RepoCmd {
         threshold: f64,
         tx: Tx<DoctorResult>,
     },
+    CreateProject {
+        id: String,
+        name: String,
+        description: Option<String>,
+        tx: Tx<Project>,
+    },
+    ListProjects {
+        tx: Tx<Vec<Project>>,
+    },
+    UseProject {
+        project_id: String,
+        tx: Tx<()>,
+    },
+    DeleteProject {
+        project_id: String,
+        tx: Tx<()>,
+    },
+    AddArtifact {
+        path: Option<PathBuf>,
+        content: Option<Vec<u8>>,
+        file_name: Option<String>,
+        artifact_type: ArtifactType,
+        mime_type: Option<String>,
+        id: Option<String>,
+        project_id: Option<String>,
+        metadata: Option<serde_json::Value>,
+        tx: Tx<Artifact>,
+    },
+    ListArtifacts {
+        project_id: Option<String>,
+        tx: Tx<Vec<Artifact>>,
+    },
+    GetArtifact {
+        artifact_hash: String,
+        tx: Tx<Option<Artifact>>,
+    },
+    GetArtifactBytes {
+        artifact_hash: String,
+        tx: Tx<Vec<u8>>,
+    },
+    LinkClipArtifact {
+        clip_hash_or_id: String,
+        artifact_hash: String,
+        relationship: ClipArtifactRelationship,
+        tx: Tx<ClipArtifactRef>,
+    },
+    CreatePack {
+        project_id: Option<String>,
+        roots: Vec<String>,
+        depth: Option<u32>,
+        output_path: PathBuf,
+        tx: Tx<PackManifest>,
+    },
+    ImportPack {
+        path: PathBuf,
+        restore_artifacts_to: Option<PathBuf>,
+        tx: Tx<PackManifest>,
+    },
+    InspectPack {
+        path: PathBuf,
+        tx: Tx<PackManifest>,
+    },
+    VerifyPack {
+        path: PathBuf,
+        tx: Tx<PackManifest>,
+    },
+    StartActivity {
+        activity_type: cliproot_core::ActivityType,
+        project_id: Option<String>,
+        agent_id: Option<String>,
+        prompt: Option<String>,
+        parameters: Option<serde_json::Value>,
+        session_id: Option<String>,
+        tx: Tx<Activity>,
+    },
+    EndActivity {
+        activity_id: String,
+        tx: Tx<Activity>,
+    },
+    StartSession {
+        project_id: Option<String>,
+        agent_id: Option<String>,
+        metadata: Option<serde_json::Value>,
+        tx: Tx<SessionRecord>,
+    },
+    EndSession {
+        session_id: String,
+        tx: Tx<SessionRecord>,
+    },
+    RecordClipTracking {
+        clip_hash: String,
+        activity_id: Option<String>,
+        session_id: Option<String>,
+        used_refs: Vec<String>,
+        tx: Tx<()>,
+    },
 }
 
 /// Send + Sync + Clone handle to the blocking Repository thread.
@@ -98,12 +200,14 @@ impl RepoHandle {
                     RepoCmd::ListClips {
                         document_id,
                         source_type,
+                        project_id,
                         limit,
                         tx,
                     } => {
                         let _ = tx.send(repo.list_clips(
                             document_id.as_deref(),
                             source_type.as_deref(),
+                            project_id.as_deref(),
                             limit,
                         ));
                     }
@@ -140,6 +244,143 @@ impl RepoHandle {
                         tx,
                     } => {
                         let _ = tx.send(repo.doctor(&document_text, threshold));
+                    }
+                    RepoCmd::CreateProject {
+                        id,
+                        name,
+                        description,
+                        tx,
+                    } => {
+                        let _ = tx.send(repo.create_project(&id, &name, description));
+                    }
+                    RepoCmd::ListProjects { tx } => {
+                        let _ = tx.send(repo.list_projects());
+                    }
+                    RepoCmd::UseProject { project_id, tx } => {
+                        let _ = tx.send(repo.use_project(&project_id));
+                    }
+                    RepoCmd::DeleteProject { project_id, tx } => {
+                        let _ = tx.send(repo.delete_project(&project_id));
+                    }
+                    RepoCmd::AddArtifact {
+                        path,
+                        content,
+                        file_name,
+                        artifact_type,
+                        mime_type,
+                        id,
+                        project_id,
+                        metadata,
+                        tx,
+                    } => {
+                        let _ = tx.send(repo.add_artifact(
+                            path.as_deref(),
+                            content.as_deref(),
+                            file_name.as_deref(),
+                            artifact_type,
+                            mime_type.as_deref(),
+                            id.as_deref(),
+                            project_id.as_deref(),
+                            metadata,
+                        ));
+                    }
+                    RepoCmd::ListArtifacts { project_id, tx } => {
+                        let _ = tx.send(repo.list_artifacts(project_id.as_deref()));
+                    }
+                    RepoCmd::GetArtifact { artifact_hash, tx } => {
+                        let _ = tx.send(repo.get_artifact(&artifact_hash));
+                    }
+                    RepoCmd::GetArtifactBytes { artifact_hash, tx } => {
+                        let _ = tx.send(repo.get_artifact_bytes(&artifact_hash));
+                    }
+                    RepoCmd::LinkClipArtifact {
+                        clip_hash_or_id,
+                        artifact_hash,
+                        relationship,
+                        tx,
+                    } => {
+                        let _ = tx.send(repo.link_clip_artifact(
+                            &clip_hash_or_id,
+                            &artifact_hash,
+                            relationship,
+                        ));
+                    }
+                    RepoCmd::CreatePack {
+                        project_id,
+                        roots,
+                        depth,
+                        output_path,
+                        tx,
+                    } => {
+                        let _ = tx.send(repo.create_pack(
+                            project_id.as_deref(),
+                            &roots,
+                            depth,
+                            &output_path,
+                        ));
+                    }
+                    RepoCmd::ImportPack {
+                        path,
+                        restore_artifacts_to,
+                        tx,
+                    } => {
+                        let _ = tx.send(repo.import_pack(&path, restore_artifacts_to.as_deref()));
+                    }
+                    RepoCmd::InspectPack { path, tx } => {
+                        let _ = tx.send(Repository::inspect_pack(&path));
+                    }
+                    RepoCmd::VerifyPack { path, tx } => {
+                        let _ = tx.send(Repository::verify_pack(&path));
+                    }
+                    RepoCmd::StartActivity {
+                        activity_type,
+                        project_id,
+                        agent_id,
+                        prompt,
+                        parameters,
+                        session_id,
+                        tx,
+                    } => {
+                        let _ = tx.send(repo.start_activity(
+                            activity_type,
+                            project_id.as_deref(),
+                            agent_id.as_deref(),
+                            prompt,
+                            parameters,
+                            session_id.as_deref(),
+                        ));
+                    }
+                    RepoCmd::EndActivity { activity_id, tx } => {
+                        let _ = tx.send(repo.end_activity(&activity_id));
+                    }
+                    RepoCmd::StartSession {
+                        project_id,
+                        agent_id,
+                        metadata,
+                        tx,
+                    } => {
+                        let _ = tx.send(repo.start_session(
+                            project_id.as_deref(),
+                            agent_id.as_deref(),
+                            metadata,
+                        ));
+                    }
+                    RepoCmd::EndSession { session_id, tx } => {
+                        let _ = tx.send(repo.end_session(&session_id));
+                    }
+                    RepoCmd::RecordClipTracking {
+                        clip_hash,
+                        activity_id,
+                        session_id,
+                        used_refs,
+                        tx,
+                    } => {
+                        let _ = tx.send(repo.record_clip_tracking(
+                            &clip_hash,
+                            activity_id.as_deref(),
+                            session_id.as_deref(),
+                            &used_refs,
+                        ));
                     }
                 }
             }
@@ -186,6 +427,7 @@ impl RepoHandle {
         &self,
         document_id: Option<String>,
         source_type: Option<String>,
+        project_id: Option<String>,
         limit: Option<u32>,
     ) -> Result<Vec<Clip>, StoreError> {
         let (tx, rx) = oneshot::channel();
@@ -193,6 +435,7 @@ impl RepoHandle {
             RepoCmd::ListClips {
                 document_id,
                 source_type,
+                project_id,
                 limit,
                 tx,
             },
@@ -268,6 +511,238 @@ impl RepoHandle {
             RepoCmd::Doctor {
                 document_text,
                 threshold,
+                tx,
+            },
+            rx,
+        )
+        .await
+    }
+
+    pub async fn create_project(
+        &self,
+        id: String,
+        name: String,
+        description: Option<String>,
+    ) -> Result<Project, StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(
+            RepoCmd::CreateProject {
+                id,
+                name,
+                description,
+                tx,
+            },
+            rx,
+        )
+        .await
+    }
+
+    pub async fn list_projects(&self) -> Result<Vec<Project>, StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(RepoCmd::ListProjects { tx }, rx).await
+    }
+
+    pub async fn use_project(&self, project_id: String) -> Result<(), StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(RepoCmd::UseProject { project_id, tx }, rx).await
+    }
+
+    pub async fn delete_project(&self, project_id: String) -> Result<(), StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(RepoCmd::DeleteProject { project_id, tx }, rx)
+            .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn add_artifact(
+        &self,
+        path: Option<PathBuf>,
+        content: Option<Vec<u8>>,
+        file_name: Option<String>,
+        artifact_type: ArtifactType,
+        mime_type: Option<String>,
+        id: Option<String>,
+        project_id: Option<String>,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<Artifact, StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(
+            RepoCmd::AddArtifact {
+                path,
+                content,
+                file_name,
+                artifact_type,
+                mime_type,
+                id,
+                project_id,
+                metadata,
+                tx,
+            },
+            rx,
+        )
+        .await
+    }
+
+    pub async fn list_artifacts(
+        &self,
+        project_id: Option<String>,
+    ) -> Result<Vec<Artifact>, StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(RepoCmd::ListArtifacts { project_id, tx }, rx)
+            .await
+    }
+
+    pub async fn get_artifact(
+        &self,
+        artifact_hash: String,
+    ) -> Result<Option<Artifact>, StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(RepoCmd::GetArtifact { artifact_hash, tx }, rx)
+            .await
+    }
+
+    pub async fn get_artifact_bytes(&self, artifact_hash: String) -> Result<Vec<u8>, StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(RepoCmd::GetArtifactBytes { artifact_hash, tx }, rx)
+            .await
+    }
+
+    pub async fn link_clip_artifact(
+        &self,
+        clip_hash_or_id: String,
+        artifact_hash: String,
+        relationship: ClipArtifactRelationship,
+    ) -> Result<ClipArtifactRef, StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(
+            RepoCmd::LinkClipArtifact {
+                clip_hash_or_id,
+                artifact_hash,
+                relationship,
+                tx,
+            },
+            rx,
+        )
+        .await
+    }
+
+    pub async fn create_pack(
+        &self,
+        project_id: Option<String>,
+        roots: Vec<String>,
+        depth: Option<u32>,
+        output_path: PathBuf,
+    ) -> Result<PackManifest, StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(
+            RepoCmd::CreatePack {
+                project_id,
+                roots,
+                depth,
+                output_path,
+                tx,
+            },
+            rx,
+        )
+        .await
+    }
+
+    pub async fn import_pack(
+        &self,
+        path: PathBuf,
+        restore_artifacts_to: Option<PathBuf>,
+    ) -> Result<PackManifest, StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(
+            RepoCmd::ImportPack {
+                path,
+                restore_artifacts_to,
+                tx,
+            },
+            rx,
+        )
+        .await
+    }
+
+    pub async fn inspect_pack(&self, path: PathBuf) -> Result<PackManifest, StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(RepoCmd::InspectPack { path, tx }, rx).await
+    }
+
+    pub async fn verify_pack(&self, path: PathBuf) -> Result<PackManifest, StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(RepoCmd::VerifyPack { path, tx }, rx).await
+    }
+
+    pub async fn start_activity(
+        &self,
+        activity_type: cliproot_core::ActivityType,
+        project_id: Option<String>,
+        agent_id: Option<String>,
+        prompt: Option<String>,
+        parameters: Option<serde_json::Value>,
+        session_id: Option<String>,
+    ) -> Result<Activity, StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(
+            RepoCmd::StartActivity {
+                activity_type,
+                project_id,
+                agent_id,
+                prompt,
+                parameters,
+                session_id,
+                tx,
+            },
+            rx,
+        )
+        .await
+    }
+
+    pub async fn end_activity(&self, activity_id: String) -> Result<Activity, StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(RepoCmd::EndActivity { activity_id, tx }, rx)
+            .await
+    }
+
+    pub async fn start_session(
+        &self,
+        project_id: Option<String>,
+        agent_id: Option<String>,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<SessionRecord, StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(
+            RepoCmd::StartSession {
+                project_id,
+                agent_id,
+                metadata,
+                tx,
+            },
+            rx,
+        )
+        .await
+    }
+
+    pub async fn end_session(&self, session_id: String) -> Result<SessionRecord, StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(RepoCmd::EndSession { session_id, tx }, rx).await
+    }
+
+    pub async fn record_clip_tracking(
+        &self,
+        clip_hash: String,
+        activity_id: Option<String>,
+        session_id: Option<String>,
+        used_refs: Vec<String>,
+    ) -> Result<(), StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.send(
+            RepoCmd::RecordClipTracking {
+                clip_hash,
+                activity_id,
+                session_id,
+                used_refs,
                 tx,
             },
             rx,

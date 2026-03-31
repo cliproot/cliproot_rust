@@ -56,9 +56,21 @@ enum Commands {
         #[arg(long)]
         document_id: Option<String>,
 
+        /// Optional project id (falls back to current project)
+        #[arg(long)]
+        project: Option<String>,
+
         /// Optional title
         #[arg(long)]
         title: Option<String>,
+
+        /// Optional activity id to associate with this clip
+        #[arg(long)]
+        activity: Option<String>,
+
+        /// Optional session id to associate with this clip
+        #[arg(long)]
+        session: Option<String>,
 
         /// Also copy to the OS clipboard with provenance embedded
         #[arg(long)]
@@ -92,6 +104,18 @@ enum Commands {
         /// Optional agent id
         #[arg(long)]
         agent: Option<String>,
+
+        /// Optional project id (falls back to current project)
+        #[arg(long)]
+        project: Option<String>,
+
+        /// Optional activity id to associate with this derived clip
+        #[arg(long)]
+        activity: Option<String>,
+
+        /// Optional session id to associate with this derived clip
+        #[arg(long)]
+        session: Option<String>,
     },
 
     /// Display clip details
@@ -121,6 +145,10 @@ enum Commands {
         /// Filter by source type
         #[arg(long)]
         source_type: Option<String>,
+
+        /// Filter by project id
+        #[arg(long)]
+        project: Option<String>,
 
         /// Maximum number of results
         #[arg(long, default_value = "50")]
@@ -187,6 +215,160 @@ enum Commands {
         #[arg(long, short)]
         path: Option<String>,
     },
+
+    /// Manage projects
+    Project {
+        #[command(subcommand)]
+        command: ProjectCommands,
+    },
+
+    /// Manage artifacts
+    Artifact {
+        #[command(subcommand)]
+        command: ArtifactCommands,
+    },
+
+    /// Create, inspect, verify, and import .cliprootpack archives
+    Pack {
+        #[command(subcommand)]
+        command: PackCommands,
+    },
+
+    /// Track prompt-scoped activities
+    Activity {
+        #[command(subcommand)]
+        command: ActivityCommands,
+    },
+
+    /// Track agent sessions that can be restored as artifacts
+    Session {
+        #[command(subcommand)]
+        command: SessionCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProjectCommands {
+    Create {
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        description: Option<String>,
+    },
+    List,
+    Use {
+        project_id: String,
+    },
+    Delete {
+        project_id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ArtifactCommands {
+    Add {
+        path: Option<String>,
+        #[arg(long)]
+        content: Option<String>,
+        #[arg(long)]
+        file_name: Option<String>,
+        #[arg(long)]
+        artifact_type: String,
+        #[arg(long)]
+        mime_type: Option<String>,
+        #[arg(long)]
+        id: Option<String>,
+        #[arg(long)]
+        project: Option<String>,
+    },
+    List {
+        #[arg(long)]
+        project: Option<String>,
+    },
+    Get {
+        artifact_hash: String,
+    },
+    Restore {
+        artifact_hash: String,
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+    Link {
+        clip_hash_or_id: String,
+        artifact_hash: String,
+        #[arg(long)]
+        relationship: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum PackCommands {
+    Create {
+        /// Project id to export
+        project_id: Option<String>,
+        /// Root clip hash or id (repeatable)
+        #[arg(long = "root")]
+        roots: Vec<String>,
+        /// Optional ancestor depth limit when using --root
+        #[arg(long)]
+        depth: Option<u32>,
+        /// Output .cliprootpack path
+        #[arg(short, long)]
+        output: String,
+    },
+    Import {
+        /// Path to .cliprootpack archive
+        path: String,
+        /// Restore imported artifacts to a directory
+        #[arg(long)]
+        restore_artifacts: Option<String>,
+    },
+    Inspect {
+        /// Path to .cliprootpack archive
+        path: String,
+    },
+    Verify {
+        /// Path to .cliprootpack archive
+        path: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ActivityCommands {
+    Start {
+        #[arg(long)]
+        activity_type: String,
+        #[arg(long)]
+        prompt: Option<String>,
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        project: Option<String>,
+        #[arg(long)]
+        parameters: Option<String>,
+        #[arg(long)]
+        session: Option<String>,
+    },
+    End {
+        activity_id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum SessionCommands {
+    Start {
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        project: Option<String>,
+        #[arg(long)]
+        metadata: Option<String>,
+    },
+    End {
+        session_id: String,
+    },
 }
 
 fn main() {
@@ -200,7 +382,10 @@ fn main() {
             source_type,
             id,
             document_id,
+            project,
             title,
+            activity,
+            session,
             copy,
         } => commands::clip::run(
             &url,
@@ -208,7 +393,10 @@ fn main() {
             &source_type,
             id,
             document_id,
+            project,
             title,
+            activity.as_deref(),
+            session.as_deref(),
             copy,
             &cli.format,
         ),
@@ -220,7 +408,19 @@ fn main() {
             quote,
             activity_type,
             agent,
-        } => commands::derive::run(&from, &quote, &activity_type, agent.as_deref(), &cli.format),
+            project,
+            activity,
+            session,
+        } => commands::derive::run(
+            &from,
+            &quote,
+            &activity_type,
+            agent.as_deref(),
+            project.as_deref(),
+            activity.as_deref(),
+            session.as_deref(),
+            &cli.format,
+        ),
         Commands::Inspect { hash_or_id } => commands::inspect::run(&hash_or_id, &cli.format),
         Commands::Trace { hash_or_id } => commands::trace::run(&hash_or_id, &cli.format),
         Commands::Verify { hash_or_id } => {
@@ -229,10 +429,12 @@ fn main() {
         Commands::List {
             document,
             source_type,
+            project,
             limit,
         } => commands::list::run(
             document.as_deref(),
             source_type.as_deref(),
+            project.as_deref(),
             limit,
             &cli.format,
         ),
@@ -251,6 +453,104 @@ fn main() {
             commands::doctor::run(&file, threshold, &cli.format)
         }
         Commands::Mcp { path } => commands::mcp::run(path.as_deref()),
+        Commands::Project { command } => match command {
+            ProjectCommands::Create {
+                id,
+                name,
+                description,
+            } => commands::project::create(&id, &name, description, &cli.format),
+            ProjectCommands::List => commands::project::list(&cli.format),
+            ProjectCommands::Use { project_id } => commands::project::use_project(&project_id),
+            ProjectCommands::Delete { project_id } => commands::project::delete(&project_id),
+        },
+        Commands::Artifact { command } => match command {
+            ArtifactCommands::Add {
+                path,
+                content,
+                file_name,
+                artifact_type,
+                mime_type,
+                id,
+                project,
+            } => commands::artifact::add(
+                path.as_deref(),
+                content.as_deref(),
+                file_name.as_deref(),
+                &artifact_type,
+                mime_type.as_deref(),
+                id.as_deref(),
+                project.as_deref(),
+                &cli.format,
+            ),
+            ArtifactCommands::List { project } => {
+                commands::artifact::list(project.as_deref(), &cli.format)
+            }
+            ArtifactCommands::Get { artifact_hash } => {
+                commands::artifact::get(&artifact_hash, &cli.format)
+            }
+            ArtifactCommands::Restore {
+                artifact_hash,
+                output,
+            } => commands::artifact::restore(&artifact_hash, output.as_deref()),
+            ArtifactCommands::Link {
+                clip_hash_or_id,
+                artifact_hash,
+                relationship,
+            } => commands::artifact::link(
+                &clip_hash_or_id,
+                &artifact_hash,
+                &relationship,
+                &cli.format,
+            ),
+        },
+        Commands::Pack { command } => match command {
+            PackCommands::Create {
+                project_id,
+                roots,
+                depth,
+                output,
+            } => commands::pack::create(project_id.as_deref(), &roots, depth, &output, &cli.format),
+            PackCommands::Import {
+                path,
+                restore_artifacts,
+            } => commands::pack::import(&path, restore_artifacts.as_deref(), &cli.format),
+            PackCommands::Inspect { path } => commands::pack::inspect(&path, &cli.format),
+            PackCommands::Verify { path } => commands::pack::verify(&path, &cli.format),
+        },
+        Commands::Activity { command } => match command {
+            ActivityCommands::Start {
+                activity_type,
+                prompt,
+                agent,
+                project,
+                parameters,
+                session,
+            } => commands::activity::start(
+                &activity_type,
+                prompt,
+                agent.as_deref(),
+                project.as_deref(),
+                parameters.as_deref(),
+                session.as_deref(),
+                &cli.format,
+            ),
+            ActivityCommands::End { activity_id } => {
+                commands::activity::end(&activity_id, &cli.format)
+            }
+        },
+        Commands::Session { command } => match command {
+            SessionCommands::Start {
+                agent,
+                project,
+                metadata,
+            } => commands::session::start(
+                agent.as_deref(),
+                project.as_deref(),
+                metadata.as_deref(),
+                &cli.format,
+            ),
+            SessionCommands::End { session_id } => commands::session::end(&session_id, &cli.format),
+        },
     };
 
     if let Err(e) = result {

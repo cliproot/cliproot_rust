@@ -1,0 +1,5 @@
+[env]
+# Path to the CRP example JSON used in roundtrip tests.
+# Points to the local monorepo copy; override this if your layout differs.
+# In CI this is set explicitly via the workflow step.
+CRP_EXAMPLE_JSON_PATH = { value = "../cliproot/schema/examples/crp-v0.0.3.document.example.json", relative = true }

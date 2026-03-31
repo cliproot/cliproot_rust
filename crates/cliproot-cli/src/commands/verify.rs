@@ -26,7 +26,7 @@ pub fn run(
         }
         None => {
             let errors = repo.verify_all()?;
-            let clips = repo.list_clips(None, None, Some(10000))?;
+            let clips = repo.list_clips(None, None, None, Some(10000))?;
             match format {
                 OutputFormat::Json => {
                     println!(
