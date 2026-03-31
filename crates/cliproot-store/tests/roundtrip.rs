@@ -375,13 +375,10 @@ fn test_pack_includes_session_artifact_links() {
 
 #[test]
 fn test_example_bundle_deserialization() {
-    let json = if let Ok(path) = std::env::var("CRP_EXAMPLE_JSON_PATH") {
-        std::fs::read_to_string(&path)
-            .unwrap_or_else(|_| panic!("Could not read CRP_EXAMPLE_JSON_PATH: {path}"))
-    } else {
-        include_str!("../../../../cliproot/schema/examples/crp-v0.0.3.document.example.json")
-            .to_string()
-    };
+    let path = std::env::var("CRP_EXAMPLE_JSON_PATH")
+        .expect("CRP_EXAMPLE_JSON_PATH must be set (see .cargo/config.toml for local dev)");
+    let json = std::fs::read_to_string(&path)
+        .unwrap_or_else(|_| panic!("Could not read CRP_EXAMPLE_JSON_PATH: {path}"));
     let bundle: CrpBundle = serde_json::from_str(&json).unwrap();
     assert_eq!(bundle.protocol_version, "0.0.3");
     assert_eq!(bundle.clips.len(), 2);
