@@ -1,6 +1,7 @@
 pub mod activity;
 pub mod annotate;
 pub mod artifact;
+pub mod capture_hook;
 pub mod cite;
 pub mod clip;
 pub mod copy;

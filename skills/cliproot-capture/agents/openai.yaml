@@ -1,0 +1,9 @@
+display:
+  name: Cliproot Capture
+  icon: magnifying-glass
+invocation:
+  allow_implicit_invocation: true
+tools:
+  mcp:
+    - command: cliproot
+      args: ["mcp"]

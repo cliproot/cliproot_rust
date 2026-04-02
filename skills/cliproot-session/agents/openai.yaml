@@ -1,5 +1,5 @@
 display:
-  name: Cliproot Research
+  name: Cliproot Session
   icon: magnifying-glass
 invocation:
   allow_implicit_invocation: true

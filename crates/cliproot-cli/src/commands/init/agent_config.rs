@@ -38,7 +38,7 @@ pub fn generate_all(root: &Path) -> Result<Vec<ConfigAction>, Box<dyn std::error
 
     // Claude Code
     actions.push(upsert_mcp_json(root, ".mcp.json", "mcpServers")?);
-    actions.extend(write_skill_dir(root, ".claude/skills/cliproot-research")?);
+    actions.extend(write_skill_dir(root, ".claude/skills/cliproot-capture")?);
 
     // Cursor
     actions.push(upsert_mcp_json(root, ".cursor/mcp.json", "mcpServers")?);
@@ -48,7 +48,7 @@ pub fn generate_all(root: &Path) -> Result<Vec<ConfigAction>, Box<dyn std::error
     actions.push(upsert_mcp_json(root, ".vscode/mcp.json", "servers")?);
 
     // Universal Agent Skills (Codex, Gemini CLI, Junie, Goose, etc.)
-    actions.extend(write_skill_dir(root, ".agents/skills/cliproot-research")?);
+    actions.extend(write_skill_dir(root, ".agents/skills/cliproot-capture")?);
     actions.push(write_codex_yaml(root)?);
 
     // Windsurf
@@ -123,21 +123,7 @@ fn write_skill_dir(
 ) -> Result<Vec<ConfigAction>, Box<dyn std::error::Error>> {
     let base = root.join(rel_dir);
 
-    let actions = vec![
-        write_file(base.join("SKILL.md"), skills::SKILL_MD)?,
-        write_file(
-            base.join("references/tool-reference.md"),
-            skills::TOOL_REFERENCE_MD,
-        )?,
-        write_file(
-            base.join("references/workflow-examples.md"),
-            skills::WORKFLOW_EXAMPLES_MD,
-        )?,
-        write_file(
-            base.join("scripts/verify-provenance.sh"),
-            skills::VERIFY_SCRIPT,
-        )?,
-    ];
+    let actions = vec![write_file(base.join("SKILL.md"), skills::SKILL_MD)?];
 
     Ok(actions)
 }
@@ -148,22 +134,22 @@ fn write_cursor_rule(root: &Path) -> Result<ConfigAction, Box<dyn std::error::Er
     let body = strip_yaml_frontmatter(skills::SKILL_MD);
     let content = format!(
         "---\n\
-         description: \"Provenance-tracked research using Cliproot. Activate when doing research or writing cited documents.\"\n\
+         description: \"Lightweight provenance capture using Cliproot. Activate when doing research or writing cited documents.\"\n\
          alwaysApply: false\n\
          ---\n\
          {body}"
     );
-    write_file(root.join(".cursor/rules/cliproot-research.mdc"), &content)
+    write_file(root.join(".cursor/rules/cliproot-capture.mdc"), &content)
 }
 
 fn write_windsurf_rule(root: &Path) -> Result<ConfigAction, Box<dyn std::error::Error>> {
     let body = strip_yaml_frontmatter(skills::SKILL_MD);
-    write_file(root.join(".windsurf/rules/cliproot-research.md"), body)
+    write_file(root.join(".windsurf/rules/cliproot-capture.md"), body)
 }
 
 fn write_codex_yaml(root: &Path) -> Result<ConfigAction, Box<dyn std::error::Error>> {
     write_file(
-        root.join(".agents/skills/cliproot-research/agents/openai.yaml"),
+        root.join(".agents/skills/cliproot-capture/agents/openai.yaml"),
         skills::OPENAI_YAML,
     )
 }
@@ -268,25 +254,22 @@ mod tests {
         write_cursor_rule(dir.path()).unwrap();
 
         let content =
-            fs::read_to_string(dir.path().join(".cursor/rules/cliproot-research.mdc")).unwrap();
+            fs::read_to_string(dir.path().join(".cursor/rules/cliproot-capture.mdc")).unwrap();
         assert!(content.starts_with("---\n"));
         assert!(content.contains("alwaysApply: false"));
         // Should contain skill body but NOT the Agent Skills frontmatter
-        assert!(content.contains("## Core Principles"));
-        assert!(!content.contains("name: cliproot-research"));
+        assert!(content.contains("## Principles"));
+        assert!(!content.contains("name: cliproot-capture"));
     }
 
     #[test]
     fn test_skill_directory_complete() {
         let dir = tempfile::tempdir().unwrap();
-        let actions = write_skill_dir(dir.path(), ".claude/skills/cliproot-research").unwrap();
-        assert_eq!(actions.len(), 4);
+        let actions = write_skill_dir(dir.path(), ".claude/skills/cliproot-capture").unwrap();
+        assert_eq!(actions.len(), 1);
 
-        let base = dir.path().join(".claude/skills/cliproot-research");
+        let base = dir.path().join(".claude/skills/cliproot-capture");
         assert!(base.join("SKILL.md").exists());
-        assert!(base.join("references/tool-reference.md").exists());
-        assert!(base.join("references/workflow-examples.md").exists());
-        assert!(base.join("scripts/verify-provenance.sh").exists());
     }
 
     #[test]
@@ -306,33 +289,33 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let actions = generate_all(dir.path()).unwrap();
 
-        // Should have: 3 MCP JSONs + 4 Claude skill files + 1 Cursor rule +
-        //              4 Agent Skills files + 1 openai.yaml + 1 Windsurf rule = 14
-        assert_eq!(actions.len(), 14);
+        // Should have: 3 MCP JSONs + 1 Claude skill file + 1 Cursor rule +
+        //              1 Agent skill file + 1 openai.yaml + 1 Windsurf rule = 8
+        assert_eq!(actions.len(), 8);
 
         // Spot check key files
         assert!(dir.path().join(".mcp.json").exists());
         assert!(dir
             .path()
-            .join(".claude/skills/cliproot-research/SKILL.md")
+            .join(".claude/skills/cliproot-capture/SKILL.md")
             .exists());
         assert!(dir.path().join(".cursor/mcp.json").exists());
         assert!(dir
             .path()
-            .join(".cursor/rules/cliproot-research.mdc")
+            .join(".cursor/rules/cliproot-capture.mdc")
             .exists());
         assert!(dir.path().join(".vscode/mcp.json").exists());
         assert!(dir
             .path()
-            .join(".agents/skills/cliproot-research/SKILL.md")
+            .join(".agents/skills/cliproot-capture/SKILL.md")
             .exists());
         assert!(dir
             .path()
-            .join(".agents/skills/cliproot-research/agents/openai.yaml")
+            .join(".agents/skills/cliproot-capture/agents/openai.yaml")
             .exists());
         assert!(dir
             .path()
-            .join(".windsurf/rules/cliproot-research.md")
+            .join(".windsurf/rules/cliproot-capture.md")
             .exists());
     }
 }

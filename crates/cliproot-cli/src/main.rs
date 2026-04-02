@@ -32,7 +32,15 @@ enum Commands {
         /// Also generate agent/IDE configuration files (MCP configs, skills, rules)
         #[arg(long)]
         agent: bool,
+
+        /// Install Claude Code PostToolUse hook for automatic tool-call capture
+        #[arg(long)]
+        hooks: bool,
     },
+
+    /// Capture a PostToolUse hook event (reads JSON from stdin)
+    #[command(name = "capture-hook")]
+    CaptureHook,
 
     /// Create a source record + clip from a URL
     Clip {
@@ -375,7 +383,8 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Init { agent } => commands::init::run(agent),
+        Commands::Init { agent, hooks } => commands::init::run(agent, hooks),
+        Commands::CaptureHook => commands::capture_hook::run(),
         Commands::Clip {
             url,
             quote,

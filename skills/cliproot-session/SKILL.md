@@ -1,10 +1,9 @@
 ---
-name: cliproot-research
+name: cliproot-session
 description: >
-  Provenance-tracked research using Cliproot MCP tools. Captures sources as clips,
-  builds knowledge through derivations, and produces fully cited outputs with
-  traceable lineage. Use when doing research, writing cited documents, or when
-  provenance and source attribution matter.
+  Full-ceremony provenance-tracked research with session and activity tracking.
+  Use when preserving context for handoff to another agent or human, or when
+  running multi-agent research pipelines that need explicit session management.
 compatibility: Requires cliproot CLI installed and MCP server configured.
 metadata:
   author: cliproot
