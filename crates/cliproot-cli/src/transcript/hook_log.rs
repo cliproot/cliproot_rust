@@ -107,11 +107,7 @@ pub fn build_enrichment(entries: &[HookLogEntry]) -> HookEnrichment {
                 }
             }
             "Read" => {
-                if let Some(path) = entry
-                    .tool_input
-                    .get("file_path")
-                    .and_then(|v| v.as_str())
-                {
+                if let Some(path) = entry.tool_input.get("file_path").and_then(|v| v.as_str()) {
                     if seen_files_read.insert(path.to_string()) {
                         enrichment.files_read.push(path.to_string());
                     }
@@ -143,7 +139,9 @@ pub fn build_enrichment(entries: &[HookLogEntry]) -> HookEnrichment {
 
 /// Find the hook log file for a given session ID in .cliproot/agent-log/.
 pub fn find_hook_log(cliproot_dir: &Path, session_id: &str) -> Option<std::path::PathBuf> {
-    let log_path = cliproot_dir.join("agent-log").join(format!("{session_id}.jsonl"));
+    let log_path = cliproot_dir
+        .join("agent-log")
+        .join(format!("{session_id}.jsonl"));
     if log_path.is_file() {
         Some(log_path)
     } else {

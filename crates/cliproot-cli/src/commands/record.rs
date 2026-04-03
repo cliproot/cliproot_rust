@@ -91,8 +91,10 @@ pub fn run(opts: RecordOptions, format: &OutputFormat) -> Result<(), Box<dyn std
             .clone()
             .unwrap_or_else(|| format!("{}.cliprootpack", record.record_id));
         // Use existing pack create via CLI
-        eprintln!("Pack creation: run `cliproot pack create --root {} -o {}`",
-            stored.record_id, pack_output);
+        eprintln!(
+            "Pack creation: run `cliproot pack create --root {} -o {}`",
+            stored.record_id, pack_output
+        );
     }
 
     // Print result
@@ -126,7 +128,11 @@ pub fn run(opts: RecordOptions, format: &OutputFormat) -> Result<(), Box<dyn std
                 &record.session_meta.session_id
             };
             let model = record.session_meta.model.as_deref().unwrap_or("unknown");
-            let branch = record.session_meta.git_branch.as_deref().unwrap_or("unknown");
+            let branch = record
+                .session_meta
+                .git_branch
+                .as_deref()
+                .unwrap_or("unknown");
             println!("  Session:     {} (Claude Code, {})", short_session, model);
             if let Some(secs) = record.stats.duration_secs {
                 let duration = if secs >= 3600 {
@@ -164,10 +170,7 @@ pub fn run(opts: RecordOptions, format: &OutputFormat) -> Result<(), Box<dyn std
                 println!("  Subagents:   {}", record.stats.subagent_count);
             }
             println!();
-            println!(
-                "  Preview:     {}",
-                stored.preview_path.display()
-            );
+            println!("  Preview:     {}", stored.preview_path.display());
             println!("  Artifact:    {}", stored.artifact_hash);
         }
     }
@@ -175,9 +178,7 @@ pub fn run(opts: RecordOptions, format: &OutputFormat) -> Result<(), Box<dyn std
     Ok(())
 }
 
-fn resolve_session_paths(
-    opts: &RecordOptions,
-) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+fn resolve_session_paths(opts: &RecordOptions) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
     // Explicit JSONL path
     if let Some(ref jsonl) = opts.jsonl {
         return Ok(vec![PathBuf::from(jsonl)]);
@@ -259,10 +260,7 @@ fn resolve_hook_log(
     }
 }
 
-fn print_dry_run(
-    record: &session_builder::DesignRecord,
-    format: &OutputFormat,
-) {
+fn print_dry_run(record: &session_builder::DesignRecord, format: &OutputFormat) {
     match format {
         OutputFormat::Json => {
             let json = serde_json::json!({

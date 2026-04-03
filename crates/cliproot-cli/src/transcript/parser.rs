@@ -313,11 +313,7 @@ fn find_main_jsonl(session_dir: &Path) -> Result<PathBuf, Box<dyn std::error::Er
     // The session_dir might be the directory containing subagents/, tool-results/, etc.
     // The main JSONL is typically at <session_dir>.jsonl (sibling to the dir)
     // or could be a .jsonl file directly passed.
-    if session_dir.is_file()
-        && session_dir
-            .extension()
-            .map_or(false, |ext| ext == "jsonl")
-    {
+    if session_dir.is_file() && session_dir.extension().map_or(false, |ext| ext == "jsonl") {
         return Ok(session_dir.to_path_buf());
     }
 
@@ -350,9 +346,7 @@ fn find_main_jsonl(session_dir: &Path) -> Result<PathBuf, Box<dyn std::error::Er
 
 /// Discover the Claude Code session directory for the given working directory.
 /// Searches ~/.claude/projects/ for a directory whose path hash matches.
-pub fn discover_session_dir(
-    cwd: &Path,
-) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+pub fn discover_session_dir(cwd: &Path) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
     let home = home_dir()?;
     let projects_dir = home.join(".claude").join("projects");
     if !projects_dir.is_dir() {

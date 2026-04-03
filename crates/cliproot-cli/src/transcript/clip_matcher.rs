@@ -141,7 +141,10 @@ mod tests {
             "mcp__cliproot__derive",
             DERIVE_TOOL_PATTERNS
         ));
-        assert!(!is_cliproot_tool("mcp__cliproot__clip", DERIVE_TOOL_PATTERNS));
+        assert!(!is_cliproot_tool(
+            "mcp__cliproot__clip",
+            DERIVE_TOOL_PATTERNS
+        ));
         assert!(!is_cliproot_tool("mcp__other__clip", CLIP_TOOL_PATTERNS));
     }
 

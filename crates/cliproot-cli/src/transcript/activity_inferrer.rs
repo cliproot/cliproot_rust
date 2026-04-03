@@ -170,8 +170,7 @@ fn build_activity<'a>(
     if let Some(enrichment) = enrichment {
         for event in &turn.events {
             if event.event_type == TranscriptEventType::ToolUse {
-                if let Some(hook_entry) =
-                    enrichment.entries_by_tool_use_id.get(event.uuid.as_str())
+                if let Some(hook_entry) = enrichment.entries_by_tool_use_id.get(event.uuid.as_str())
                 {
                     match hook_entry.tool_name.as_str() {
                         "WebFetch" => {
@@ -276,7 +275,9 @@ fn infer_activity_type(
         return "research".to_string();
     }
     // Look at tool patterns
-    let has_writes = tool_calls.iter().any(|(name, _)| name == "Write" || name == "Edit");
+    let has_writes = tool_calls
+        .iter()
+        .any(|(name, _)| name == "Write" || name == "Edit");
     let has_reads = tool_calls
         .iter()
         .any(|(name, _)| name == "Read" || name.contains("Glob") || name.contains("Grep"));
@@ -348,10 +349,34 @@ mod tests {
     #[test]
     fn segments_into_turns() {
         let events = vec![
-            make_event(TranscriptEventType::UserMessage, 0, Some("first"), None, None),
-            make_event(TranscriptEventType::AssistantMessage, 1, Some("response 1"), None, None),
-            make_event(TranscriptEventType::UserMessage, 5, Some("second"), None, None),
-            make_event(TranscriptEventType::AssistantMessage, 6, Some("response 2"), None, None),
+            make_event(
+                TranscriptEventType::UserMessage,
+                0,
+                Some("first"),
+                None,
+                None,
+            ),
+            make_event(
+                TranscriptEventType::AssistantMessage,
+                1,
+                Some("response 1"),
+                None,
+                None,
+            ),
+            make_event(
+                TranscriptEventType::UserMessage,
+                5,
+                Some("second"),
+                None,
+                None,
+            ),
+            make_event(
+                TranscriptEventType::AssistantMessage,
+                6,
+                Some("response 2"),
+                None,
+                None,
+            ),
         ];
 
         let turns = segment_into_turns(&events);

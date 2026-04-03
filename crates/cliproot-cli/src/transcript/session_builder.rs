@@ -44,12 +44,16 @@ pub fn build_design_record(
     matched_clips: Vec<MatchedClip>,
     enrichment: Option<HookEnrichment>,
 ) -> DesignRecord {
-    let record_id = format!(
-        "rec-{}",
-        short_session_id(&session_meta.session_id)
-    );
+    let record_id = format!("rec-{}", short_session_id(&session_meta.session_id));
     let stats = compute_stats(&activities, &matched_clips, &enrichment, &session_meta);
-    let markdown = render_markdown(&record_id, &session_meta, &activities, &matched_clips, &enrichment, &stats);
+    let markdown = render_markdown(
+        &record_id,
+        &session_meta,
+        &activities,
+        &matched_clips,
+        &enrichment,
+        &stats,
+    );
 
     DesignRecord {
         record_id,
@@ -99,7 +103,12 @@ pub fn store_design_record(
             .chain(inferred.derived_clip_hashes.iter())
         {
             let used_refs: Vec<String> = Vec::new();
-            let _ = repo.record_clip_tracking(hash, Some(activity.id.as_str()), Some(&session.session_id), &used_refs);
+            let _ = repo.record_clip_tracking(
+                hash,
+                Some(activity.id.as_str()),
+                Some(&session.session_id),
+                &used_refs,
+            );
         }
 
         repo.end_activity(activity.id.as_str())?;
@@ -162,7 +171,10 @@ fn render_markdown(
         .unwrap_or_else(|| "unknown".to_string());
     let branch = meta.git_branch.as_deref().unwrap_or("unknown");
     let model = meta.model.as_deref().unwrap_or("unknown");
-    let duration = stats.duration_secs.map(format_duration).unwrap_or_else(|| "unknown".to_string());
+    let duration = stats
+        .duration_secs
+        .map(format_duration)
+        .unwrap_or_else(|| "unknown".to_string());
 
     writeln!(md, "# Design Record: {record_id}").unwrap();
     writeln!(
@@ -173,12 +185,7 @@ fn render_markdown(
         branch
     )
     .unwrap();
-    writeln!(
-        md,
-        "**Duration**: {} | **Model**: {}",
-        duration, model
-    )
-    .unwrap();
+    writeln!(md, "**Duration**: {} | **Model**: {}", duration, model).unwrap();
     writeln!(md).unwrap();
 
     // Summary stats
@@ -211,7 +218,13 @@ fn render_markdown(
 
     for (i, activity) in activities.iter().enumerate() {
         let time = activity.started_at.format("%H:%M");
-        writeln!(md, "### Turn {}: \"{}\"", i + 1, truncate_prompt(&activity.prompt, 80)).unwrap();
+        writeln!(
+            md,
+            "### Turn {}: \"{}\"",
+            i + 1,
+            truncate_prompt(&activity.prompt, 80)
+        )
+        .unwrap();
         writeln!(md, "*{} | {}*", time, activity.activity_type).unwrap();
         writeln!(md).unwrap();
 

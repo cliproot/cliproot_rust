@@ -62,8 +62,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // 6. Build log entry
     let entry = LogEntry {
-        ts: chrono::Utc::now()
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        ts: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         session_id: session_id.to_string(),
         tool_use_id: hook.tool_use_id,
         tool_name: hook.tool_name,
@@ -234,7 +233,10 @@ mod tests {
         let long = "x".repeat(60_000);
         let v = serde_json::json!({"content": long, "short": "ok"});
         let result = truncate_strings(v);
-        assert!(result["content"].as_str().unwrap().ends_with(" [truncated]"));
+        assert!(result["content"]
+            .as_str()
+            .unwrap()
+            .ends_with(" [truncated]"));
         assert_eq!(result["short"], "ok");
     }
 

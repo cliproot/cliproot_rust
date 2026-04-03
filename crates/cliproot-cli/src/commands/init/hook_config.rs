@@ -19,12 +19,8 @@ pub fn install_hooks(root: &Path) -> Result<ConfigAction, Box<dyn std::error::Er
         .ok_or("settings.json is not a JSON object")?;
 
     // Navigate/create: hooks -> PostToolUse (array)
-    let hooks = obj
-        .entry("hooks")
-        .or_insert_with(|| serde_json::json!({}));
-    let hooks_obj = hooks
-        .as_object_mut()
-        .ok_or("hooks is not a JSON object")?;
+    let hooks = obj.entry("hooks").or_insert_with(|| serde_json::json!({}));
+    let hooks_obj = hooks.as_object_mut().ok_or("hooks is not a JSON object")?;
 
     let post_tool_use = hooks_obj
         .entry("PostToolUse")
