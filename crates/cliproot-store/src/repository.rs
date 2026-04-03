@@ -131,6 +131,10 @@ impl Repository {
         &self.root
     }
 
+    pub fn cliproot_dir(&self) -> &Path {
+        &self.cliproot_dir
+    }
+
     fn config_path(&self) -> PathBuf {
         self.cliproot_dir.join("config.json")
     }
