@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::fs;
 use std::fs::File;
 use std::io::{Cursor, Read};
@@ -26,10 +26,22 @@ const PROTOCOL_VERSION: &str = "0.0.3";
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RemoteConfig {
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RepoConfig {
     protocol_version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     current_project_id: Option<String>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    remotes: HashMap<String, RemoteConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    default_remote: Option<String>,
 }
 
 pub struct Repository {
@@ -74,6 +86,8 @@ impl Repository {
         let config = RepoConfig {
             protocol_version: PROTOCOL_VERSION.to_string(),
             current_project_id: None,
+            remotes: HashMap::new(),
+            default_remote: None,
         };
         fs::write(
             cliproot_dir.join("config.json"),
@@ -140,6 +154,8 @@ impl Repository {
             self.write_config(&RepoConfig {
                 protocol_version: PROTOCOL_VERSION.to_string(),
                 current_project_id: None,
+                remotes: HashMap::new(),
+                default_remote: None,
             })?;
         }
         Ok(())
@@ -198,6 +214,87 @@ impl Repository {
             self.write_config(&config)?;
         }
         Ok(())
+    }
+
+    // ── Remote management ───────────────────────────────────────────
+
+    pub fn add_remote(
+        &self,
+        name: &str,
+        url: &str,
+        owner: Option<&str>,
+    ) -> Result<(), StoreError> {
+        let mut config = self.read_config()?;
+        if config.remotes.contains_key(name) {
+            return Err(StoreError::Other(format!(
+                "remote already exists: {name}"
+            )));
+        }
+        config.remotes.insert(
+            name.to_string(),
+            RemoteConfig {
+                url: url.to_string(),
+                owner: owner.map(String::from),
+            },
+        );
+        if config.remotes.len() == 1 {
+            config.default_remote = Some(name.to_string());
+        }
+        self.write_config(&config)
+    }
+
+    pub fn remove_remote(&self, name: &str) -> Result<(), StoreError> {
+        let mut config = self.read_config()?;
+        if config.remotes.remove(name).is_none() {
+            return Err(StoreError::Other(format!(
+                "remote not found: {name}"
+            )));
+        }
+        if config.default_remote.as_deref() == Some(name) {
+            config.default_remote = None;
+        }
+        self.write_config(&config)
+    }
+
+    pub fn list_remotes(&self) -> Result<Vec<(String, RemoteConfig)>, StoreError> {
+        let config = self.read_config()?;
+        let mut remotes: Vec<_> = config.remotes.into_iter().collect();
+        remotes.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(remotes)
+    }
+
+    pub fn get_remote(&self, name: &str) -> Result<RemoteConfig, StoreError> {
+        let config = self.read_config()?;
+        config
+            .remotes
+            .get(name)
+            .cloned()
+            .ok_or_else(|| StoreError::Other(format!("remote not found: {name}")))
+    }
+
+    pub fn default_remote(&self) -> Result<Option<(String, RemoteConfig)>, StoreError> {
+        let config = self.read_config()?;
+        if let Some(name) = &config.default_remote {
+            if let Some(remote) = config.remotes.get(name) {
+                return Ok(Some((name.clone(), remote.clone())));
+            }
+        }
+        if config.remotes.len() == 1 {
+            let (name, remote) = config.remotes.into_iter().next().unwrap();
+            return Ok(Some((name, remote)));
+        }
+        Ok(None)
+    }
+
+    pub fn set_default_remote(&self, name: &str) -> Result<(), StoreError> {
+        let mut config = self.read_config()?;
+        if !config.remotes.contains_key(name) {
+            return Err(StoreError::Other(format!(
+                "remote not found: {name}"
+            )));
+        }
+        config.default_remote = Some(name.to_string());
+        self.write_config(&config)
     }
 
     fn resolve_project_id(&self, explicit: Option<&str>) -> Result<Option<CrpId>, StoreError> {

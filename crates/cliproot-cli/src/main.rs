@@ -234,6 +234,42 @@ enum Commands {
         command: PackCommands,
     },
 
+    /// Manage registry remotes
+    Remote {
+        #[command(subcommand)]
+        command: RemoteCommands,
+    },
+
+    /// Push a project's provenance to a registry
+    Push {
+        /// Project id (defaults to current project)
+        project: Option<String>,
+        /// Remote name (defaults to default remote)
+        #[arg(long)]
+        remote: Option<String>,
+    },
+
+    /// Pull a project's provenance from a registry
+    Pull {
+        /// Project name on the registry
+        project: Option<String>,
+        /// Remote name (defaults to default remote)
+        #[arg(long)]
+        remote: Option<String>,
+    },
+
+    /// Search clips on a remote registry
+    Search {
+        /// Search query
+        query: String,
+        /// Remote name (defaults to default remote)
+        #[arg(long)]
+        remote: Option<String>,
+        /// Maximum results
+        #[arg(long, default_value = "20")]
+        limit: u32,
+    },
+
     /// Track prompt-scoped activities
     Activity {
         #[command(subcommand)]
@@ -354,6 +390,27 @@ enum ActivityCommands {
     End {
         activity_id: String,
     },
+}
+
+#[derive(Subcommand)]
+enum RemoteCommands {
+    /// Add a registry remote
+    Add {
+        /// Remote name (e.g., "origin")
+        name: String,
+        /// Registry URL
+        url: String,
+        /// Owner/namespace on the registry
+        #[arg(long)]
+        owner: Option<String>,
+    },
+    /// Remove a registry remote
+    Remove {
+        /// Remote name
+        name: String,
+    },
+    /// List configured remotes
+    List,
 }
 
 #[derive(Subcommand)]
@@ -517,6 +574,24 @@ fn main() {
             PackCommands::Inspect { path } => commands::pack::inspect(&path, &cli.format),
             PackCommands::Verify { path } => commands::pack::verify(&path, &cli.format),
         },
+        Commands::Remote { command } => match command {
+            RemoteCommands::Add { name, url, owner } => {
+                commands::remote::add(&name, &url, owner.as_deref(), &cli.format)
+            }
+            RemoteCommands::Remove { name } => commands::remote::remove(&name, &cli.format),
+            RemoteCommands::List => commands::remote::list(&cli.format),
+        },
+        Commands::Push { project, remote } => {
+            commands::push::run(project.as_deref(), remote.as_deref(), &cli.format)
+        }
+        Commands::Pull { project, remote } => {
+            commands::pull::run(project.as_deref(), remote.as_deref(), &cli.format)
+        }
+        Commands::Search {
+            query,
+            remote,
+            limit,
+        } => commands::search::run(&query, remote.as_deref(), limit, &cli.format),
         Commands::Activity { command } => match command {
             ActivityCommands::Start {
                 activity_type,

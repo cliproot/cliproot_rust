@@ -1,0 +1,14 @@
+[package]
+name = "cliproot-registry"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[dependencies]
+cliproot-core = { workspace = true }
+cliproot-store = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+thiserror = { workspace = true }
+tempfile = { workspace = true }
