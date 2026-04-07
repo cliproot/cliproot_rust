@@ -1,3 +1,4 @@
+use cliproot_registry::credential;
 use cliproot_registry::RegistryClient;
 use cliproot_store::Repository;
 
@@ -21,8 +22,19 @@ pub fn run(
     let tmp = tempfile::NamedTempFile::new()?;
     let _manifest = repo.create_pack(Some(&project_id), &[], None, tmp.path())?;
 
-    // Push to the registry.
+    // Push to the registry, attaching auth token if available.
     let client = RegistryClient::new(&remote_config.url)?;
+    let client = match credential::get_token(&remote_config.url) {
+        Some(token) => client.with_token(token),
+        None => {
+            if client.config().auth_required {
+                return Err(
+                    "authentication required — run `cliproot login` first".into(),
+                );
+            }
+            client
+        }
+    };
     let result = client.push_pack(tmp.path())?;
 
     match format {

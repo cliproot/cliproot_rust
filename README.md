@@ -4,7 +4,7 @@ The native runtime for the [ClipRoot Protocol (CRP)](https://github.com/cliproot
 
 ## Overview
 
-`cliproot` is a single binary that provides a CLI (20+ subcommands), an MCP server (24+ tools for AI agents), hybrid storage (filesystem objects + SQLite index), OS clipboard integration, and `.cliprootpack` archive support. It implements [CRP v0.0.3](https://github.com/cliproot/cliproot/tree/main/spec) — the same protocol defined by the canonical [JSON Schema](https://github.com/cliproot/cliproot/tree/main/schema) and [TypeScript packages](https://github.com/cliproot/cliproot/tree/main/packages) in the main ClipRoot repository.
+`cliproot` is a single binary that provides a CLI (20+ subcommands), an MCP server (24+ tools for AI agents), hybrid storage (filesystem objects + SQLite index), OS clipboard integration, `.cliprootpack` archive support, and registry authentication (OAuth 2.0 device flow + keychain credential storage). It implements [CRP v0.0.3](https://github.com/cliproot/cliproot/tree/main/spec) — the same protocol defined by the canonical [JSON Schema](https://github.com/cliproot/cliproot/tree/main/schema) and [TypeScript packages](https://github.com/cliproot/cliproot/tree/main/packages) in the main ClipRoot repository.
 
 Clips are content-addressed provenance records that link quoted text back to its source and track how content was derived or transformed. Artifacts are content-addressed files such as markdown plans, prompts, or JSON notes. Every clip and artifact gets a stable `sha256-*` hash that can be verified offline without a registry.
 
@@ -31,13 +31,14 @@ cliproot_rust/
 ├── crates/
 │   ├── cliproot-core/      # protocol model, hashing, verification
 │   ├── cliproot-store/     # hybrid storage: files + SQLite index
+│   ├── cliproot-registry/  # registry client, device flow auth, credential storage
 │   ├── cliproot-cli/       # clap-based CLI binary (cliproot), includes MCP server
 │   └── cliproot-mcp/       # MCP server library + standalone binary
 └── crates/cliproot-store/tests/
     └── roundtrip.rs        # integration tests
 ```
 
-**Dependency graph**: `cli → mcp → store → core`
+**Dependency graph**: `cli → { mcp, registry } → store → core`
 
 ## Install
 
@@ -446,6 +447,35 @@ cliproot doctor report.md --format json
 ```
 
 Coverage statuses: `covered` (strong match), `partial` (weak match), `uncovered` (no match found).
+
+### Registry Authentication
+
+When a registry has authentication enabled (`authRequired: true` in its config), write operations (`push`) require a valid token. The CLI supports OAuth 2.0 device flow login and environment-variable tokens for CI.
+
+```bash
+# Interactive login — opens browser for device authorization
+cliproot login
+cliproot login --remote origin
+
+# CI/automation — store a pre-existing token directly
+cliproot login --token crp_...
+
+# Log out — removes stored credentials
+cliproot logout
+cliproot logout --remote origin
+```
+
+**Token resolution order:**
+1. `CLIPROOT_TOKEN` environment variable (for CI pipelines)
+2. System keychain (macOS Keychain, Linux Secret Service, Windows Credential Manager)
+3. `~/.cliproot/credentials.json` file fallback
+
+When pushing to an authenticated registry, the CLI automatically attaches the stored token:
+
+```bash
+export CLIPROOT_TOKEN=crp_...  # CI usage
+cliproot push                  # token is attached automatically
+```
 
 ### Help
 

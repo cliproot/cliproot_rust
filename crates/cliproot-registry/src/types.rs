@@ -75,3 +75,32 @@ pub struct ApiErrorBody {
     pub code: String,
     pub message: String,
 }
+
+/// Response from `POST /api/auth/device/code` (RFC 8628 device authorization).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceCodeResponse {
+    pub device_code: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    pub verification_uri_complete: String,
+    pub expires_in: u64,
+    pub interval: u64,
+}
+
+/// Response from `POST /api/auth/device/token` on success.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenResponse {
+    pub access_token: String,
+    pub token_type: String,
+    pub expires_in: u64,
+    #[serde(default)]
+    pub scope: String,
+}
+
+/// Error response from `POST /api/auth/device/token`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceTokenError {
+    pub error: String,
+    #[serde(default)]
+    pub error_description: String,
+}

@@ -11,6 +11,8 @@ pub mod ingest;
 pub mod init;
 pub mod inspect;
 pub mod list;
+pub mod login;
+pub mod logout;
 pub mod mcp;
 pub mod pack;
 pub mod project;

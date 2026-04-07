@@ -33,7 +33,12 @@ impl RegistryClient {
         })
     }
 
-    /// Set a bearer token for authenticated requests (Phase 4d).
+    /// Access the registry's index configuration.
+    pub fn config(&self) -> &RegistryIndexConfig {
+        &self.config
+    }
+
+    /// Set a bearer token for authenticated requests.
     pub fn with_token(mut self, token: String) -> Self {
         self.token = Some(token);
         self

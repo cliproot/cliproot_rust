@@ -12,3 +12,5 @@ serde_json = { workspace = true }
 reqwest = { workspace = true }
 thiserror = { workspace = true }
 tempfile = { workspace = true }
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+open = "5"

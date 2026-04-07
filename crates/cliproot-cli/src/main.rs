@@ -270,6 +270,23 @@ enum Commands {
         limit: u32,
     },
 
+    /// Authenticate with a registry
+    Login {
+        /// Use a pre-existing token instead of device flow (for CI)
+        #[arg(long)]
+        token: Option<String>,
+        /// Remote name (defaults to default remote)
+        #[arg(long)]
+        remote: Option<String>,
+    },
+
+    /// Log out from a registry
+    Logout {
+        /// Remote name (defaults to default remote)
+        #[arg(long)]
+        remote: Option<String>,
+    },
+
     /// Track prompt-scoped activities
     Activity {
         #[command(subcommand)]
@@ -592,6 +609,12 @@ fn main() {
             remote,
             limit,
         } => commands::search::run(&query, remote.as_deref(), limit, &cli.format),
+        Commands::Login { token, remote } => {
+            commands::login::run(token.as_deref(), remote.as_deref(), &cli.format)
+        }
+        Commands::Logout { remote } => {
+            commands::logout::run(remote.as_deref(), &cli.format)
+        }
         Commands::Activity { command } => match command {
             ActivityCommands::Start {
                 activity_type,
