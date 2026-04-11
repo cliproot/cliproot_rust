@@ -74,6 +74,17 @@ When generating final documents or handing work to another agent:
 - Use `cliproot_pack_create` or `cliproot_export` to share portable context
 - Use `cliproot_pack_import` when restoring work from a pack
 
+## Consolidation — Review Unhighlighted Sources
+
+When the consolidation hook fires (you'll see a block message listing consulted sources):
+
+1. **Review each source** — did it contain a passage that anchored your reasoning?
+2. **Highlight what mattered** — for key sources, call `cliproot_clip` with the specific passage that informed your thinking. You don't need to clip the whole document — just the sentence or paragraph that caught your attention.
+3. **Record syntheses** — if the hook identifies a file you wrote that drew from multiple sources, consider recording it with `cliproot_derive` to preserve the reasoning chain.
+4. **Skip freely** — sources you consulted but didn't find useful don't need highlights. They'll still appear in the provenance graph as consulted-but-not-cited (lower confidence), and semantic enrichment can infer connections later.
+
+If no hooks are available (Cursor, Windsurf), call `cliproot_consolidate` periodically to check for unhighlighted sources.
+
 ## Tool Quick Reference
 
 See [references/tool-reference.md](references/tool-reference.md) for detailed API docs.

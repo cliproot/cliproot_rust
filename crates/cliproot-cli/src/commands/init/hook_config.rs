@@ -3,6 +3,49 @@ use std::path::Path;
 
 use super::agent_config::ConfigAction;
 
+/// Install a single hook entry under `hooks.<event_name>` if not already present.
+/// Returns true if the hook was newly added.
+fn install_hook_entry(
+    hooks_obj: &mut serde_json::Map<String, serde_json::Value>,
+    event_name: &str,
+    command: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let event_arr = hooks_obj
+        .entry(event_name)
+        .or_insert_with(|| serde_json::json!([]));
+    let arr = event_arr
+        .as_array_mut()
+        .ok_or(format!("{event_name} is not a JSON array"))?;
+
+    let already_installed = arr.iter().any(|entry| {
+        entry
+            .get("hooks")
+            .and_then(|h| h.as_array())
+            .map(|hooks| {
+                hooks.iter().any(|hook| {
+                    hook.get("command")
+                        .and_then(|c| c.as_str())
+                        .map(|cmd| cmd.contains(command))
+                        .unwrap_or(false)
+                })
+            })
+            .unwrap_or(false)
+    });
+
+    if already_installed {
+        return Ok(false);
+    }
+
+    let hook_entry = serde_json::json!({
+        "hooks": [{
+            "type": "command",
+            "command": command
+        }]
+    });
+    arr.push(hook_entry);
+    Ok(true)
+}
+
 pub fn install_hooks(root: &Path) -> Result<ConfigAction, Box<dyn std::error::Error>> {
     let path = root.join(".claude/settings.json");
     let existed = path.exists();
@@ -18,45 +61,18 @@ pub fn install_hooks(root: &Path) -> Result<ConfigAction, Box<dyn std::error::Er
         .as_object_mut()
         .ok_or("settings.json is not a JSON object")?;
 
-    // Navigate/create: hooks -> PostToolUse (array)
     let hooks = obj.entry("hooks").or_insert_with(|| serde_json::json!({}));
     let hooks_obj = hooks.as_object_mut().ok_or("hooks is not a JSON object")?;
 
-    let post_tool_use = hooks_obj
-        .entry("PostToolUse")
-        .or_insert_with(|| serde_json::json!([]));
-    let post_tool_use_arr = post_tool_use
-        .as_array_mut()
-        .ok_or("PostToolUse is not a JSON array")?;
+    let mut any_added = false;
+    any_added |= install_hook_entry(hooks_obj, "PostToolUse", "cliproot capture-hook")?;
+    any_added |= install_hook_entry(hooks_obj, "Stop", "cliproot consolidate-hook")?;
+    any_added |=
+        install_hook_entry(hooks_obj, "PreCompact", "cliproot consolidate-hook --emergency")?;
 
-    // Check if cliproot capture-hook is already installed
-    let already_installed = post_tool_use_arr.iter().any(|entry| {
-        entry
-            .get("hooks")
-            .and_then(|h| h.as_array())
-            .map(|hooks| {
-                hooks.iter().any(|hook| {
-                    hook.get("command")
-                        .and_then(|c| c.as_str())
-                        .map(|cmd| cmd.contains("cliproot capture-hook"))
-                        .unwrap_or(false)
-                })
-            })
-            .unwrap_or(false)
-    });
-
-    if already_installed {
+    if !any_added {
         return Ok(ConfigAction::Skipped(path));
     }
-
-    // Add the hook entry
-    let hook_entry = serde_json::json!({
-        "hooks": [{
-            "type": "command",
-            "command": "cliproot capture-hook"
-        }]
-    });
-    post_tool_use_arr.push(hook_entry);
 
     // Write back
     if let Some(parent) = path.parent() {
@@ -89,6 +105,15 @@ mod tests {
         let hook = &content["hooks"]["PostToolUse"][0]["hooks"][0];
         assert_eq!(hook["type"], "command");
         assert_eq!(hook["command"], "cliproot capture-hook");
+
+        let stop_hook = &content["hooks"]["Stop"][0]["hooks"][0];
+        assert_eq!(stop_hook["command"], "cliproot consolidate-hook");
+
+        let precompact_hook = &content["hooks"]["PreCompact"][0]["hooks"][0];
+        assert_eq!(
+            precompact_hook["command"],
+            "cliproot consolidate-hook --emergency"
+        );
     }
 
     #[test]
@@ -125,7 +150,7 @@ mod tests {
         fs::create_dir_all(&claude_dir).unwrap();
         fs::write(
             claude_dir.join("settings.json"),
-            r#"{"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":"cliproot capture-hook"}]}]}}"#,
+            r#"{"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":"cliproot capture-hook"}]}],"Stop":[{"hooks":[{"type":"command","command":"cliproot consolidate-hook"}]}],"PreCompact":[{"hooks":[{"type":"command","command":"cliproot consolidate-hook --emergency"}]}]}}"#,
         )
         .unwrap();
 

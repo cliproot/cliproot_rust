@@ -874,6 +874,48 @@ impl ClipRootService {
             .map_err(store_err)?;
         ok_json(&report)
     }
+
+    /// Surface unclipped sources from the agent-log for review.
+    #[tool(
+        description = "Surface sources consulted during the session but not yet highlighted as clips. Returns candidate sources, files, and synthesis candidates for review. For agents without hook support (Cursor, Windsurf), call this periodically to check for unhighlighted sources."
+    )]
+    async fn cliproot_consolidate(
+        &self,
+        Parameters(params): Parameters<ConsolidateParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let session_id = params.session_id.unwrap_or_default();
+        if session_id.is_empty() {
+            return Err(ErrorData::invalid_params(
+                "session_id is required",
+                None,
+            ));
+        }
+        // Shell out to `cliproot consolidate` to avoid circular crate dependency
+        let mut cmd = std::process::Command::new("cliproot");
+        cmd.arg("consolidate")
+            .arg("--session")
+            .arg(&session_id)
+            .arg("--format")
+            .arg("json");
+        if params.commit {
+            cmd.arg("--commit");
+        }
+        let output = tokio::task::spawn_blocking(move || cmd.output())
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?
+            .map_err(|e| ErrorData::internal_error(format!("failed to run cliproot: {e}"), None))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(ErrorData::internal_error(
+                format!("consolidation failed: {stderr}"),
+                None,
+            ));
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let parsed: serde_json::Value = serde_json::from_str(&stdout)
+            .map_err(|e| ErrorData::internal_error(format!("invalid JSON output: {e}"), None))?;
+        ok_json(&parsed)
+    }
 }
 
 // ── ServerHandler ──────────────────────────────────────────────────────────

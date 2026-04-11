@@ -3,6 +3,8 @@ pub mod annotate;
 pub mod artifact;
 pub mod capture_hook;
 pub mod cite;
+pub mod consolidate;
+pub mod consolidate_hook;
 pub mod clip;
 pub mod copy;
 pub mod derive;

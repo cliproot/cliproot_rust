@@ -43,6 +43,29 @@ enum Commands {
     #[command(name = "capture-hook")]
     CaptureHook,
 
+    /// Surface unclipped sources from agent-log for review
+    Consolidate {
+        /// Session ID to consolidate
+        #[arg(long)]
+        session: String,
+
+        /// Process ALL unconsolidated entries and write candidate artifact
+        #[arg(long)]
+        emergency: bool,
+
+        /// Advance watermark after consolidation
+        #[arg(long)]
+        commit: bool,
+    },
+
+    /// Handle Stop/PreCompact hook events for consolidation (reads JSON from stdin)
+    #[command(name = "consolidate-hook")]
+    ConsolidateHook {
+        /// Emergency mode for PreCompact hooks
+        #[arg(long)]
+        emergency: bool,
+    },
+
     /// Reconstruct a design record from a Claude Code session
     Record {
         /// Claude Code session ID (default: most recent)
@@ -503,6 +526,12 @@ fn main() {
     let result = match cli.command {
         Commands::Init { agent, hooks } => commands::init::run(agent, hooks),
         Commands::CaptureHook => commands::capture_hook::run(),
+        Commands::Consolidate {
+            session,
+            emergency,
+            commit,
+        } => commands::consolidate::run(&session, emergency, commit, &cli.format),
+        Commands::ConsolidateHook { emergency } => commands::consolidate_hook::run(emergency),
         Commands::Record {
             session,
             session_dir,

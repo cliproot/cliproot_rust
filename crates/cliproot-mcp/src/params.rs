@@ -279,3 +279,15 @@ pub struct SessionStartParams {
 pub struct SessionEndParams {
     pub session_id: String,
 }
+
+// ── cliproot_consolidate ─────────────────────────────────────────────────
+
+/// Parameters for the cliproot_consolidate tool.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ConsolidateParams {
+    /// Session ID to consolidate (required)
+    pub session_id: Option<String>,
+    /// Advance watermark after consolidation
+    #[serde(default)]
+    pub commit: bool,
+}

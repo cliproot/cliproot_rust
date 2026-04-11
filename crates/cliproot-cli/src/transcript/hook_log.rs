@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// A parsed entry from the capture-hook agent log.
 #[derive(Debug, Clone)]
@@ -145,6 +146,46 @@ pub fn find_hook_log(cliproot_dir: &Path, session_id: &str) -> Option<std::path:
     }
 }
 
+// ── Consolidation watermark ───────────────────────────────────────────────
+
+/// Tracks which entries have been processed by consolidation.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ConsolidationState {
+    /// Number of JSONL lines processed so far.
+    pub line_count: usize,
+    /// Number of human messages at last consolidation (for adaptive interval).
+    pub message_count: usize,
+    /// Timestamp of last consolidation run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_consolidation_ts: Option<String>,
+}
+
+/// Read the consolidation watermark for a session. Returns default if none exists.
+pub fn read_watermark(cliproot_dir: &Path, session_id: &str) -> ConsolidationState {
+    let path = cliproot_dir
+        .join("agent-log")
+        .join(format!("{session_id}.watermark"));
+    match fs::read_to_string(&path) {
+        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+        Err(_) => ConsolidationState::default(),
+    }
+}
+
+/// Write the consolidation watermark for a session.
+pub fn write_watermark(
+    cliproot_dir: &Path,
+    session_id: &str,
+    state: &ConsolidationState,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let path = cliproot_dir
+        .join("agent-log")
+        .join(format!("{session_id}.watermark"));
+    let mut file = fs::File::create(&path)?;
+    let json = serde_json::to_string_pretty(state)?;
+    file.write_all(json.as_bytes())?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,5 +275,34 @@ mod tests {
 
         let enrichment = build_enrichment(&entries);
         assert_eq!(enrichment.files_read.len(), 1);
+    }
+
+    #[test]
+    fn watermark_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let cliproot_dir = dir.path();
+        fs::create_dir_all(cliproot_dir.join("agent-log")).unwrap();
+
+        // Default when no file exists
+        let state = read_watermark(cliproot_dir, "sess-1");
+        assert_eq!(state.line_count, 0);
+        assert_eq!(state.message_count, 0);
+        assert!(state.last_consolidation_ts.is_none());
+
+        // Write and read back
+        let state = ConsolidationState {
+            line_count: 47,
+            message_count: 15,
+            last_consolidation_ts: Some("2026-04-11T15:00:00Z".to_string()),
+        };
+        write_watermark(cliproot_dir, "sess-1", &state).unwrap();
+
+        let read_back = read_watermark(cliproot_dir, "sess-1");
+        assert_eq!(read_back.line_count, 47);
+        assert_eq!(read_back.message_count, 15);
+        assert_eq!(
+            read_back.last_consolidation_ts.as_deref(),
+            Some("2026-04-11T15:00:00Z")
+        );
     }
 }

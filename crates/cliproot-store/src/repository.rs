@@ -603,6 +603,11 @@ impl Repository {
         Ok(clips)
     }
 
+    pub fn has_clip_for_uri(&self, uri: &str) -> Result<bool, StoreError> {
+        let sources = self.index.find_sources_by_uri(uri)?;
+        Ok(!sources.is_empty())
+    }
+
     pub fn trace(&self, hash_or_id: &str) -> Result<Vec<LineageNode>, StoreError> {
         let clip_hash = self
             .resolve_clip_hash(hash_or_id)?

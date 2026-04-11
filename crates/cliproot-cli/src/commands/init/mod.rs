@@ -33,7 +33,7 @@ pub fn run(agent: bool, hooks: bool) -> Result<(), Box<dyn std::error::Error>> {
         // Ensure agent-log directory exists
         let log_dir = cwd.join(".cliproot/agent-log");
         std::fs::create_dir_all(&log_dir)?;
-        println!("\nPostToolUse hook installed.");
+        println!("\nPostToolUse + Stop + PreCompact hooks installed.");
     }
 
     Ok(())
