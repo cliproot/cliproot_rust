@@ -1,6 +1,7 @@
 pub mod activity;
 pub mod annotate;
 pub mod artifact;
+pub mod capture_hook;
 pub mod cite;
 pub mod clip;
 pub mod copy;
@@ -20,6 +21,7 @@ pub mod pull;
 pub mod push;
 pub mod remote;
 pub mod search;
+pub mod record;
 pub mod session;
 pub mod trace;
 pub mod verify;

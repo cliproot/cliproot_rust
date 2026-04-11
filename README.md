@@ -476,6 +476,37 @@ When pushing to an authenticated registry, the CLI automatically attaches the st
 export CLIPROOT_TOKEN=crp_...  # CI usage
 cliproot push                  # token is attached automatically
 ```
+### Reconstruct a design record from a Claude Code session
+
+After a Claude Code session, reconstruct a structured design record showing what was explored, what sources were consulted, what files were touched, and what decisions were made.
+
+```bash
+# Reconstruct the most recent session (auto-detected from ~/.claude/projects/)
+cliproot record
+
+# Preview what would be captured without writing anything
+cliproot record --dry-run
+
+# Reconstruct a specific session by ID
+cliproot record --session 811a6ab9
+
+# Include the last 3 sessions (multi-day explorations)
+cliproot record --last 3
+
+# Point to an explicit JSONL transcript
+cliproot record --jsonl ~/.claude/projects/-Volumes-.../session.jsonl
+
+# Also create a .cliprootpack for sharing
+cliproot record --pack
+```
+
+`cliproot record` parses the Claude Code JSONL transcript, cross-references clip/derive tool calls against `.cliproot/index.db`, merges the hook-generated agent log (from `cliproot capture-hook`) if available, infers activities from conversation turns, and produces:
+
+- A session + activities stored in `.cliproot/` with full clip linkage
+- A human-readable markdown design record at `.cliproot/records/rec-<id>.md`
+- JSON output with `--format json`
+
+The command requires either auto-detection from `~/.claude/projects/` or an explicit `--jsonl`/`--session-dir` path. If `cliproot init --hooks` was used, the hook log enriches the record with URLs fetched, files read/modified, and bash commands — even for tool calls that weren't captured as clips.
 
 ### Help
 
@@ -492,8 +523,12 @@ cliproot help <command>
 ├── config.json          # { "protocolVersion": "0.0.3", "currentProjectId": "..."? }
 ├── index.db             # SQLite — fast lookups by hash/id/document
 ├── artifacts/           # raw artifact bytes keyed by sha256-...
-└── objects/
-    └── sha256-{hash}.json   # one bundle file per stored bundle
+├── objects/
+│   └── sha256-{hash}.json   # one bundle file per stored bundle
+├── agent-log/           # PostToolUse hook capture logs (written by cliproot capture-hook)
+│   └── {session-id}.jsonl
+└── records/             # human-readable design records (written by cliproot record)
+    └── rec-{id}.md
 ```
 
 Clips are content-addressed: the same text from the same source always produces the same `clipHash`, regardless of when or where it was created.
