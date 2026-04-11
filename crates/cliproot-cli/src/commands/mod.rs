@@ -1,6 +1,7 @@
 pub mod activity;
 pub mod annotate;
 pub mod artifact;
+pub mod capture_hook;
 pub mod cite;
 pub mod clip;
 pub mod copy;
@@ -14,6 +15,7 @@ pub mod list;
 pub mod mcp;
 pub mod pack;
 pub mod project;
+pub mod record;
 pub mod session;
 pub mod trace;
 pub mod verify;

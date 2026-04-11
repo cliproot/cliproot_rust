@@ -1,6 +1,7 @@
 mod commands;
 mod output;
 mod skills;
+mod transcript;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
@@ -32,6 +33,57 @@ enum Commands {
         /// Also generate agent/IDE configuration files (MCP configs, skills, rules)
         #[arg(long)]
         agent: bool,
+
+        /// Install Claude Code PostToolUse hook for automatic tool-call capture
+        #[arg(long)]
+        hooks: bool,
+    },
+
+    /// Capture a PostToolUse hook event (reads JSON from stdin)
+    #[command(name = "capture-hook")]
+    CaptureHook,
+
+    /// Reconstruct a design record from a Claude Code session
+    Record {
+        /// Claude Code session ID (default: most recent)
+        #[arg(long)]
+        session: Option<String>,
+
+        /// Explicit Claude Code session directory path
+        #[arg(long)]
+        session_dir: Option<String>,
+
+        /// Explicit path to session JSONL file
+        #[arg(long)]
+        jsonl: Option<String>,
+
+        /// Path to hook-generated agent log (default: auto-detect)
+        #[arg(long)]
+        hook_log: Option<String>,
+
+        /// Include last N sessions (for multi-session explorations)
+        #[arg(long)]
+        last: Option<u32>,
+
+        /// Cliproot project to scope reconstruction to
+        #[arg(long)]
+        project: Option<String>,
+
+        /// Include subagent transcripts (default: true)
+        #[arg(long, default_value = "true")]
+        include_subagents: bool,
+
+        /// Show what would be reconstructed without writing
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Also create a .cliprootpack archive
+        #[arg(long)]
+        pack: bool,
+
+        /// Output path for pack or session artifact
+        #[arg(short, long)]
+        output: Option<String>,
     },
 
     /// Create a source record + clip from a URL
@@ -375,7 +427,34 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Init { agent } => commands::init::run(agent),
+        Commands::Init { agent, hooks } => commands::init::run(agent, hooks),
+        Commands::CaptureHook => commands::capture_hook::run(),
+        Commands::Record {
+            session,
+            session_dir,
+            jsonl,
+            hook_log,
+            last,
+            project,
+            include_subagents,
+            dry_run,
+            pack,
+            output,
+        } => commands::record::run(
+            commands::record::RecordOptions {
+                session_id: session,
+                session_dir,
+                jsonl,
+                hook_log_path: hook_log,
+                last,
+                project,
+                include_subagents,
+                dry_run,
+                pack,
+                output,
+            },
+            &cli.format,
+        ),
         Commands::Clip {
             url,
             quote,
