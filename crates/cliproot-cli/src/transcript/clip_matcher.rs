@@ -34,7 +34,7 @@ pub fn match_clips(
     let tool_uses: HashMap<&str, &TranscriptEvent> = events
         .iter()
         .filter(|e| e.event_type == TranscriptEventType::ToolUse)
-        .filter_map(|e| Some((e.uuid.as_str(), e)))
+        .map(|e| (e.uuid.as_str(), e))
         .collect();
 
     // Build a map of tool_use_id → tool result content.

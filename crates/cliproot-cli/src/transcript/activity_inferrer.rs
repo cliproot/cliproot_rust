@@ -298,7 +298,7 @@ fn summarize_reasoning(parts: &[String]) -> Option<String> {
     }
     let combined = parts.join(" ");
     let sentences: Vec<&str> = combined
-        .split(|c: char| c == '.' || c == '!' || c == '?')
+        .split(['.', '!', '?'])
         .filter(|s| !s.trim().is_empty())
         .take(3)
         .collect();

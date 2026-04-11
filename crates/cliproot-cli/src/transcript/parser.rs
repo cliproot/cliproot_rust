@@ -295,7 +295,7 @@ pub fn parse_session_dir(
         for entry in fs::read_dir(&subagents_dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "jsonl") {
+            if path.extension().is_some_and(|ext| ext == "jsonl") {
                 let stem = path.file_stem().unwrap_or_default().to_string_lossy();
                 let agent_id = stem.to_string();
                 let sub_events = parse_jsonl_str(&fs::read_to_string(&path)?, Some(&agent_id))?;
@@ -313,7 +313,7 @@ fn find_main_jsonl(session_dir: &Path) -> Result<PathBuf, Box<dyn std::error::Er
     // The session_dir might be the directory containing subagents/, tool-results/, etc.
     // The main JSONL is typically at <session_dir>.jsonl (sibling to the dir)
     // or could be a .jsonl file directly passed.
-    if session_dir.is_file() && session_dir.extension().map_or(false, |ext| ext == "jsonl") {
+    if session_dir.is_file() && session_dir.extension().is_some_and(|ext| ext == "jsonl") {
         return Ok(session_dir.to_path_buf());
     }
 
@@ -328,7 +328,7 @@ fn find_main_jsonl(session_dir: &Path) -> Result<PathBuf, Box<dyn std::error::Er
         let mut jsonl_files: Vec<_> = fs::read_dir(session_dir)?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
-            .filter(|p| p.extension().map_or(false, |ext| ext == "jsonl"))
+            .filter(|p| p.extension().is_some_and(|ext| ext == "jsonl"))
             .filter(|p| {
                 // Exclude subagent files
                 !p.to_string_lossy().contains("subagents")
@@ -383,7 +383,7 @@ pub fn find_sessions(project_dir: &Path) -> Result<Vec<PathBuf>, Box<dyn std::er
     let mut sessions: Vec<PathBuf> = fs::read_dir(project_dir)?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
-        .filter(|p| p.extension().map_or(false, |ext| ext == "jsonl"))
+        .filter(|p| p.extension().is_some_and(|ext| ext == "jsonl"))
         .collect();
 
     // Sort by modification time, newest first

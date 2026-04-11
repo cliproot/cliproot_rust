@@ -114,11 +114,7 @@ pub fn build_enrichment(entries: &[HookLogEntry]) -> HookEnrichment {
                 }
             }
             "Write" | "Edit" => {
-                let path_key = if entry.tool_name == "Write" {
-                    "file_path"
-                } else {
-                    "file_path"
-                };
+                let path_key = "file_path";
                 if let Some(path) = entry.tool_input.get(path_key).and_then(|v| v.as_str()) {
                     if seen_files_modified.insert(path.to_string()) {
                         enrichment.files_modified.push(path.to_string());

@@ -185,7 +185,7 @@ fn render_markdown(
         branch
     )
     .unwrap();
-    writeln!(md, "**Duration**: {} | **Model**: {}", duration, model).unwrap();
+    writeln!(md, "**Duration**: {duration} | **Model**: {model}").unwrap();
     writeln!(md).unwrap();
 
     // Summary stats
@@ -245,7 +245,7 @@ fn render_markdown(
                         .as_deref()
                         .map(|c| truncate_prompt(c, 100))
                         .unwrap_or_default();
-                    writeln!(md, "- [{}]({}) — \"{}\"", source, source, content_preview).unwrap();
+                    writeln!(md, "- [{source}]({source}) — \"{content_preview}\"").unwrap();
                 } else {
                     writeln!(md, "- `{}`", short_hash(hash)).unwrap();
                 }

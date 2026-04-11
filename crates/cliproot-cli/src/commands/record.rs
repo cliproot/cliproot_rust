@@ -133,7 +133,7 @@ pub fn run(opts: RecordOptions, format: &OutputFormat) -> Result<(), Box<dyn std
                 .git_branch
                 .as_deref()
                 .unwrap_or("unknown");
-            println!("  Session:     {} (Claude Code, {})", short_session, model);
+            println!("  Session:     {short_session} (Claude Code, {model})");
             if let Some(secs) = record.stats.duration_secs {
                 let duration = if secs >= 3600 {
                     format!("{}h {}m", secs / 3600, (secs % 3600) / 60)
@@ -230,7 +230,7 @@ fn resolve_session_paths(opts: &RecordOptions) -> Result<Vec<PathBuf>, Box<dyn s
             .cloned()
             .collect();
         if matching.is_empty() {
-            return Err(format!("no session matching '{}' found", session_id).into());
+            return Err(format!("no session matching '{session_id}' found").into());
         }
         return Ok(matching);
     }
