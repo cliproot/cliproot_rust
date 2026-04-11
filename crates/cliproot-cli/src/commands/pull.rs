@@ -33,7 +33,10 @@ pub fn run(
     match format {
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&manifest)?),
         _ => {
-            println!("Pulled {} clips, {} artifacts", manifest.counts.clips, manifest.counts.artifacts);
+            println!(
+                "Pulled {} clips, {} artifacts",
+                manifest.counts.clips, manifest.counts.artifacts
+            );
             if let Some(project) = &manifest.project {
                 println!("  project: {} ({})", project.name, project.id);
             }

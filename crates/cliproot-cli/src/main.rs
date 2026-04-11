@@ -691,9 +691,7 @@ fn main() {
         Commands::Login { token, remote } => {
             commands::login::run(token.as_deref(), remote.as_deref(), &cli.format)
         }
-        Commands::Logout { remote } => {
-            commands::logout::run(remote.as_deref(), &cli.format)
-        }
+        Commands::Logout { remote } => commands::logout::run(remote.as_deref(), &cli.format),
         Commands::Activity { command } => match command {
             ActivityCommands::Start {
                 activity_type,

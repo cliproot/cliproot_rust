@@ -28,10 +28,7 @@ pub fn run(
                     } else {
                         &result.clip_hash
                     };
-                    let preview = result
-                        .content_preview
-                        .as_deref()
-                        .unwrap_or("(no preview)");
+                    let preview = result.content_preview.as_deref().unwrap_or("(no preview)");
                     let preview = if preview.len() > 60 {
                         format!("{}...", &preview[..60])
                     } else {
@@ -39,7 +36,11 @@ pub fn run(
                     };
                     println!("{}  {}", hash_short.dimmed(), preview);
                 }
-                println!("\n{} result(s) (total: {})", response.results.len(), response.total);
+                println!(
+                    "\n{} result(s) (total: {})",
+                    response.results.len(),
+                    response.total
+                );
             }
         }
     }

@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::RegistryError;
 use crate::types::{
-    ApiErrorResponse, PublishResult, ProjectSummary, RegistryIndexConfig, SearchResponse,
+    ApiErrorResponse, ProjectSummary, PublishResult, RegistryIndexConfig, SearchResponse,
 };
 
 pub struct RegistryClient {
@@ -68,10 +68,7 @@ impl RegistryClient {
     /// Returns the path to the downloaded `.cliprootpack` file.
     pub fn pull_pack(&self, owner: &str, project: &str) -> Result<PathBuf, RegistryError> {
         // First fetch project metadata to get the latest pack hash.
-        let index_url = format!(
-            "{}/v1/index/projects/{}/{}",
-            self.base_url, owner, project
-        );
+        let index_url = format!("{}/v1/index/projects/{}/{}", self.base_url, owner, project);
         let resp = self.http.get(&index_url).send()?;
         let resp = self.check_response(resp)?;
         let summary: ProjectSummary = resp.json()?;
@@ -83,10 +80,7 @@ impl RegistryClient {
         })?;
 
         // Download the pack.
-        let download_url = format!(
-            "{}/packs/{}.cliprootpack",
-            self.config.download, pack_hash
-        );
+        let download_url = format!("{}/packs/{}.cliprootpack", self.config.download, pack_hash);
         let resp = self.http.get(&download_url).send()?;
         let resp = self.check_response(resp)?;
 

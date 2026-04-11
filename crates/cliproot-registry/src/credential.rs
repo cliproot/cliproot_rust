@@ -95,7 +95,8 @@ fn store_file_token(registry_url: &str, token: &str) -> Result<(), String> {
 
     // Read existing credentials or start fresh
     let mut creds: serde_json::Value = if path.exists() {
-        let data = fs::read_to_string(&path).map_err(|e| format!("failed to read credentials: {e}"))?;
+        let data =
+            fs::read_to_string(&path).map_err(|e| format!("failed to read credentials: {e}"))?;
         serde_json::from_str(&data).unwrap_or_else(|_| serde_json::json!({}))
     } else {
         serde_json::json!({})

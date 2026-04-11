@@ -28,9 +28,7 @@ pub fn run(
         Some(token) => client.with_token(token),
         None => {
             if client.config().auth_required {
-                return Err(
-                    "authentication required — run `cliproot login` first".into(),
-                );
+                return Err("authentication required — run `cliproot login` first".into());
             }
             client
         }
@@ -40,7 +38,7 @@ pub fn run(
     match format {
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&result)?),
         _ => {
-            println!("Pushed project {} to {}", project_id, remote_name);
+            println!("Pushed project {project_id} to {remote_name}");
             println!("  pack:      {}", result.pack_hash);
             println!("  clips:     {}", result.clips);
             println!("  artifacts: {}", result.artifacts);

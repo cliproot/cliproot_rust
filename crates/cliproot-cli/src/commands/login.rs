@@ -45,14 +45,8 @@ pub fn run(
         }
         _ => {
             println!();
-            println!(
-                "  Visit: {}",
-                device.verification_uri
-            );
-            println!(
-                "  Enter code: {}",
-                device.user_code
-            );
+            println!("  Visit: {}", device.verification_uri);
+            println!("  Enter code: {}", device.user_code);
             println!();
         }
     }

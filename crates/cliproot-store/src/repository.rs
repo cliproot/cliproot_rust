@@ -222,17 +222,10 @@ impl Repository {
 
     // ── Remote management ───────────────────────────────────────────
 
-    pub fn add_remote(
-        &self,
-        name: &str,
-        url: &str,
-        owner: Option<&str>,
-    ) -> Result<(), StoreError> {
+    pub fn add_remote(&self, name: &str, url: &str, owner: Option<&str>) -> Result<(), StoreError> {
         let mut config = self.read_config()?;
         if config.remotes.contains_key(name) {
-            return Err(StoreError::Other(format!(
-                "remote already exists: {name}"
-            )));
+            return Err(StoreError::Other(format!("remote already exists: {name}")));
         }
         config.remotes.insert(
             name.to_string(),
@@ -250,9 +243,7 @@ impl Repository {
     pub fn remove_remote(&self, name: &str) -> Result<(), StoreError> {
         let mut config = self.read_config()?;
         if config.remotes.remove(name).is_none() {
-            return Err(StoreError::Other(format!(
-                "remote not found: {name}"
-            )));
+            return Err(StoreError::Other(format!("remote not found: {name}")));
         }
         if config.default_remote.as_deref() == Some(name) {
             config.default_remote = None;
@@ -293,9 +284,7 @@ impl Repository {
     pub fn set_default_remote(&self, name: &str) -> Result<(), StoreError> {
         let mut config = self.read_config()?;
         if !config.remotes.contains_key(name) {
-            return Err(StoreError::Other(format!(
-                "remote not found: {name}"
-            )));
+            return Err(StoreError::Other(format!("remote not found: {name}")));
         }
         config.default_remote = Some(name.to_string());
         self.write_config(&config)
