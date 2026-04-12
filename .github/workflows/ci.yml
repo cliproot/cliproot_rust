@@ -20,6 +20,16 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all -- --check
 
+  skill-sync:
+    name: Skill copies in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify .claude-plugin skill copies match skills/ source
+        run: |
+          diff -q skills/cliproot-capture/SKILL.md .claude-plugin/skills/cliproot-capture/SKILL.md
+          diff -q skills/cliproot-session/SKILL.md .claude-plugin/skills/cliproot-session/SKILL.md
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
