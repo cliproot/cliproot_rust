@@ -1,12 +1,6 @@
 ---
-name: cliproot-capture
-description: >
-  Lightweight provenance capture. Clips sources and derives syntheses
-  during research. Use when doing research or writing cited documents.
-compatibility: Requires cliproot MCP server configured.
-metadata:
-  author: cliproot
-  version: "1.0"
+description: "Lightweight provenance capture using Cliproot. Activate when doing research or writing cited documents."
+alwaysApply: false
 ---
 
 ## Principles
@@ -24,7 +18,7 @@ metadata:
 
 ## Consolidation — Review Unhighlighted Sources
 
-When the consolidation hook fires (you'll see a block message listing consulted sources):
+When the consolidation hook fires (you'll see a blocking message listing consulted sources):
 
 1. **Review each source** — did it contain a passage that anchored your reasoning?
 2. **Highlight what mattered** — for key sources, call `cliproot_clip` with the specific passage that informed your thinking. You don't need to clip the whole document — just the sentence or paragraph that caught your attention.

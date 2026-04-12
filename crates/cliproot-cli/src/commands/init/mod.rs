@@ -1,9 +1,11 @@
 mod agent_config;
 mod hook_config;
 
+pub use hook_config::HarnessSelection;
+
 use cliproot_store::{Repository, StoreError};
 
-pub fn run(agent: bool, hooks: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(agent: bool, hooks: bool, hooks_for: Option<HarnessSelection>) -> Result<(), Box<dyn std::error::Error>> {
     let cwd = std::env::current_dir()?;
 
     match Repository::init(&cwd) {
@@ -27,13 +29,22 @@ pub fn run(agent: bool, hooks: bool) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if hooks {
-        let action = hook_config::install_hooks(&cwd)?;
-        println!("  {} {}", action.symbol(), action.path_display(&cwd));
+        let selection = hooks_for.unwrap_or(HarnessSelection::Auto);
+        let actions = hook_config::install_hooks_for(&cwd, selection)?;
+
+        for action in &actions {
+            println!("  {} {}", action.symbol(), action.path_display(&cwd));
+        }
 
         // Ensure agent-log directory exists
         let log_dir = cwd.join(".cliproot/agent-log");
         std::fs::create_dir_all(&log_dir)?;
-        println!("\nPostToolUse + Stop + PreCompact hooks installed.");
+
+        if actions.len() > 1 {
+            println!("\nPostToolUse + Stop + PreCompact hooks installed for {} harnesses.", actions.len());
+        } else {
+            println!("\nPostToolUse + Stop + PreCompact hooks installed.");
+        }
     }
 
     Ok(())

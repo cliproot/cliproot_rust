@@ -5,15 +5,22 @@ use std::path::Path;
 use serde::Deserialize;
 
 use crate::commands::consolidate::{load_config, run_consolidation, ConsolidationConfig};
+use crate::commands::harness::{
+    emit_consolidation_block, emit_passthrough, parse_stop_input, Harness,
+};
 use crate::transcript::hook_log::{
     parse_hook_log, read_watermark, write_watermark, ConsolidationState,
 };
 
 /// Hook input from Claude Code Stop/PreCompact hooks.
+/// Kept for backward compatibility; prefer harness-aware parsing via `parse_stop_input`.
 #[derive(Deserialize)]
 struct HookInput {
+    #[allow(dead_code)]
     session_id: String,
+    #[allow(dead_code)]
     cwd: String,
+    #[allow(dead_code)]
     #[serde(default)]
     transcript_path: Option<String>,
     // Absorb unknown fields for forward-compatibility.
@@ -21,13 +28,13 @@ struct HookInput {
     _extra: serde_json::Value,
 }
 
-pub fn run(emergency: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(harness: Harness, emergency: bool) -> Result<(), Box<dyn std::error::Error>> {
     // 1. Read stdin
     let mut input = String::new();
     std::io::stdin().read_to_string(&mut input)?;
 
-    // 2. Parse hook input
-    let hook: HookInput = serde_json::from_str(&input)?;
+    // 2. Parse hook input using harness-aware dispatch
+    let hook = parse_stop_input(harness, &input)?;
 
     // 3. Sanitize session_id
     if hook.session_id.is_empty()
@@ -43,9 +50,28 @@ pub fn run(emergency: bool) -> Result<(), Box<dyn std::error::Error>> {
     let cliproot_dir = discover_cliproot_dir(&hook.cwd)?;
     let config = load_config(&cliproot_dir);
 
+    // Optional: Handle Cursor preCompact observational signal
+    // We drop a marker file that tells the next Stop hook to run in emergency mode
+    if harness == Harness::Cursor && emergency {
+        let marker_path = cliproot_dir
+            .join("agent-log")
+            .join(format!("precompact-hinted-{}", hook.session_id));
+        let _ = fs::write(&marker_path, "");
+    }
+
     // 5. Check adaptive interval (unless emergency)
     if !emergency {
         let watermark = read_watermark(&cliproot_dir, &hook.session_id);
+
+        // Check if we have a preCompact hint marker (Cursor hint)
+        let marker_path = cliproot_dir
+            .join("agent-log")
+            .join(format!("precompact-hinted-{}", hook.session_id));
+        let was_precompact_hinted = marker_path.exists();
+        if was_precompact_hinted {
+            // Remove the marker after recognizing it
+            let _ = fs::remove_file(&marker_path);
+        }
 
         // Count human messages in transcript
         let message_count = match &hook.transcript_path {
@@ -55,15 +81,18 @@ pub fn run(emergency: bool) -> Result<(), Box<dyn std::error::Error>> {
 
         let effective_interval = compute_effective_interval(&cliproot_dir, &hook.session_id, &config);
 
-        let messages_since = if message_count > watermark.message_count {
-            message_count - watermark.message_count
+        let messages_since = message_count.saturating_sub(watermark.message_count);
+
+        // If preCompact hinted, tighten interval
+        let effective_interval = if was_precompact_hinted {
+            effective_interval / 2
         } else {
-            0
+            effective_interval
         };
 
         if messages_since < effective_interval {
             // Not at threshold — passthrough
-            println!("{{}}");
+            println!("{}", emit_passthrough(harness));
             return Ok(());
         }
     }
@@ -117,15 +146,12 @@ pub fn run(emergency: bool) -> Result<(), Box<dyn std::error::Error>> {
             )?;
         }
 
-        // Output blocking response
-        let output = serde_json::json!({
-            "decision": "block",
-            "reason": result.format_block_reason(),
-        });
-        println!("{}", serde_json::to_string(&output)?);
+        // Output harness-appropriate blocking response
+        let reason = result.format_block_reason();
+        println!("{}", emit_consolidation_block(harness, &reason));
     } else {
         // No candidates — passthrough
-        println!("{{}}");
+        println!("{}", emit_passthrough(harness));
     }
 
     Ok(())

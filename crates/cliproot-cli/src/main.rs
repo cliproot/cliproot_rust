@@ -41,7 +41,11 @@ enum Commands {
 
     /// Capture a PostToolUse hook event (reads JSON from stdin)
     #[command(name = "capture-hook")]
-    CaptureHook,
+    CaptureHook {
+        /// AI harness (claude-code, cursor, codex)
+        #[arg(long, value_enum, default_value = "claude-code")]
+        harness: commands::harness::Harness,
+    },
 
     /// Surface unclipped sources from agent-log for review
     Consolidate {
@@ -61,6 +65,10 @@ enum Commands {
     /// Handle Stop/PreCompact hook events for consolidation (reads JSON from stdin)
     #[command(name = "consolidate-hook")]
     ConsolidateHook {
+        /// AI harness (claude-code, cursor, codex)
+        #[arg(long, value_enum, default_value = "claude-code")]
+        harness: commands::harness::Harness,
+
         /// Emergency mode for PreCompact hooks
         #[arg(long)]
         emergency: bool,
@@ -524,14 +532,14 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Init { agent, hooks } => commands::init::run(agent, hooks),
-        Commands::CaptureHook => commands::capture_hook::run(),
+        Commands::Init { agent, hooks } => commands::init::run(agent, hooks, None),
+        Commands::CaptureHook { harness } => commands::capture_hook::run(harness),
         Commands::Consolidate {
             session,
             emergency,
             commit,
         } => commands::consolidate::run(&session, emergency, commit, &cli.format),
-        Commands::ConsolidateHook { emergency } => commands::consolidate_hook::run(emergency),
+        Commands::ConsolidateHook { harness, emergency } => commands::consolidate_hook::run(harness, emergency),
         Commands::Record {
             session,
             session_dir,

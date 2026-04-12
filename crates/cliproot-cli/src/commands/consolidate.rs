@@ -376,14 +376,9 @@ fn detect_syntheses(
         let mut source_urls: HashSet<String> = HashSet::new();
         let mut source_paths: HashSet<String> = HashSet::new();
         let cutoff_time = entry.timestamp - lookback_duration;
-        let start_idx = if i > config.synthesis_lookback_entries {
-            i - config.synthesis_lookback_entries
-        } else {
-            0
-        };
+        let start_idx = i.saturating_sub(config.synthesis_lookback_entries);
 
-        for j in start_idx..i {
-            let prev = &entries[j];
+        for prev in entries.iter().take(i).skip(start_idx).cloned().collect::<Vec<_>>() {
             if prev.timestamp < cutoff_time {
                 continue;
             }

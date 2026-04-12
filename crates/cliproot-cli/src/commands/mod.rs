@@ -2,6 +2,7 @@ pub mod activity;
 pub mod annotate;
 pub mod artifact;
 pub mod capture_hook;
+pub mod harness;
 pub mod cite;
 pub mod consolidate;
 pub mod consolidate_hook;

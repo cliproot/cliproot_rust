@@ -2,7 +2,9 @@ use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+
+use crate::commands::harness::{parse_hook_input, Harness};
 
 const MAX_STRING_BYTES: usize = 50_000;
 
@@ -15,19 +17,6 @@ const MCP_TOOL_PREFIX: &str = "mcp__cliproot__";
 /// Tools explicitly skipped (noisy, high-frequency).
 const SKIPPED_TOOLS: &[&str] = &["Glob", "Grep", "ToolSearch"];
 
-#[derive(Deserialize)]
-struct HookInput {
-    session_id: String,
-    tool_name: String,
-    tool_input: serde_json::Value,
-    tool_response: serde_json::Value,
-    tool_use_id: String,
-    cwd: String,
-    // Absorb unknown fields for forward-compatibility.
-    #[serde(flatten)]
-    _extra: serde_json::Value,
-}
-
 #[derive(Serialize)]
 struct LogEntry {
     ts: String,
@@ -39,13 +28,13 @@ struct LogEntry {
     cwd: String,
 }
 
-pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(harness: Harness) -> Result<(), Box<dyn std::error::Error>> {
     // 1. Read stdin
     let mut input = String::new();
     std::io::stdin().read_to_string(&mut input)?;
 
-    // 2. Parse
-    let hook: HookInput = serde_json::from_str(&input)?;
+    // 2. Parse using harness-aware dispatch
+    let hook = parse_hook_input(harness, &input)?;
 
     // 3. Filter
     if !should_capture(&hook.tool_name) {
@@ -271,6 +260,8 @@ mod tests {
 
     #[test]
     fn full_capture_roundtrip() {
+        use crate::commands::harness::{parse_hook_input, Harness};
+
         let dir = tempfile::tempdir().unwrap();
         let cliproot = dir.path().join(".cliproot");
         std::fs::create_dir_all(&cliproot).unwrap();
@@ -287,8 +278,8 @@ mod tests {
             "tool_use_id": "toolu_01ABC"
         });
 
-        // Parse
-        let hook: HookInput = serde_json::from_value(input).unwrap();
+        // Parse using harness dispatcher (Claude Code format)
+        let hook = parse_hook_input(Harness::ClaudeCode, &input.to_string()).unwrap();
         assert!(should_capture(&hook.tool_name));
 
         // Write
@@ -298,10 +289,10 @@ mod tests {
             ts: "2026-04-01T00:00:00Z".to_string(),
             session_id: hook.session_id.clone(),
             tool_use_id: hook.tool_use_id,
-            tool_name: hook.tool_name,
+            tool_name: hook.tool_name.clone(),
             tool_input: truncate_strings(hook.tool_input),
             tool_response: truncate_strings(hook.tool_response),
-            cwd: hook.cwd,
+            cwd: hook.cwd.clone(),
         };
         let log_path = log_dir.join(format!("{}.jsonl", hook.session_id));
         let line = serde_json::to_string(&entry).unwrap();
@@ -313,5 +304,103 @@ mod tests {
         assert_eq!(parsed["tool_name"], "Write");
         assert_eq!(parsed["session_id"], "test-session-123");
         assert_eq!(parsed["tool_input"]["file_path"], "/tmp/foo.rs");
+    }
+
+    #[test]
+    fn cursor_capture_roundtrip() {
+        use crate::commands::harness::{parse_hook_input, Harness};
+
+        let dir = tempfile::tempdir().unwrap();
+        let cliproot = dir.path().join(".cliproot");
+        std::fs::create_dir_all(&cliproot).unwrap();
+
+        // Cursor uses tool_output instead of tool_response
+        let input = serde_json::json!({
+            "session_id": "cursor-session-456",
+            "tool_name": "WebFetch",
+            "tool_input": {"url": "https://example.com"},
+            "tool_output": {"content": "<html>...</html>"},
+            "tool_use_id": "tool_cus_xyz",
+            "cwd": dir.path().to_str().unwrap()
+        });
+
+        // Parse using harness dispatcher (Cursor format)
+        let hook = parse_hook_input(Harness::Cursor, &input.to_string()).unwrap();
+        assert!(should_capture(&hook.tool_name));
+
+        // Verify normalization: Cursor's tool_output becomes tool_response
+        assert_eq!(hook.tool_response["content"], "<html>...</html>");
+
+        // Write
+        let log_dir = cliproot.join("agent-log");
+        std::fs::create_dir_all(&log_dir).unwrap();
+        let entry = LogEntry {
+            ts: "2026-04-01T00:00:00Z".to_string(),
+            session_id: hook.session_id.clone(),
+            tool_use_id: hook.tool_use_id.clone(),
+            tool_name: hook.tool_name.clone(),
+            tool_input: truncate_strings(hook.tool_input),
+            tool_response: truncate_strings(hook.tool_response),
+            cwd: hook.cwd.clone(),
+        };
+        let log_path = log_dir.join(format!("{}.jsonl", hook.session_id));
+        let line = serde_json::to_string(&entry).unwrap();
+        std::fs::write(&log_path, format!("{line}\n")).unwrap();
+
+        // Verify
+        let content = std::fs::read_to_string(&log_path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
+        assert_eq!(parsed["tool_name"], "WebFetch");
+        assert_eq!(parsed["session_id"], "cursor-session-456");
+        // Cursor's tool_output got normalized to tool_response
+        assert_eq!(parsed["tool_response"]["content"], "<html>...</html>");
+    }
+
+    #[test]
+    fn codex_capture_roundtrip() {
+        use crate::commands::harness::{parse_hook_input, Harness};
+
+        let dir = tempfile::tempdir().unwrap();
+        let cliproot = dir.path().join(".cliproot");
+        std::fs::create_dir_all(&cliproot).unwrap();
+
+        // Codex format (similar to Claude but with optional fields)
+        let input = serde_json::json!({
+            "session_id": "codex-session-789",
+            "tool_name": "Read",
+            "tool_input": {"file_path": "/home/user/src/main.rs"},
+            "tool_response": {"content": "fn main() { println!(\"Hello\"); }"},
+            "tool_use_id": "call_abc123",
+            "cwd": dir.path().to_str().unwrap(),
+            "transcript_path": "/tmp/codex-transcript.jsonl"
+        });
+
+        // Parse using harness dispatcher (Codex format)
+        let hook = parse_hook_input(Harness::Codex, &input.to_string()).unwrap();
+        assert!(should_capture(&hook.tool_name));
+        assert_eq!(hook.tool_name, "Read");
+        assert_eq!(hook.tool_input["file_path"], "/home/user/src/main.rs");
+
+        // Write
+        let log_dir = cliproot.join("agent-log");
+        std::fs::create_dir_all(&log_dir).unwrap();
+        let entry = LogEntry {
+            ts: "2026-04-01T00:00:00Z".to_string(),
+            session_id: hook.session_id.clone(),
+            tool_use_id: hook.tool_use_id.clone(),
+            tool_name: hook.tool_name.clone(),
+            tool_input: truncate_strings(hook.tool_input),
+            tool_response: truncate_strings(hook.tool_response),
+            cwd: hook.cwd.clone(),
+        };
+        let log_path = log_dir.join(format!("{}.jsonl", hook.session_id));
+        let line = serde_json::to_string(&entry).unwrap();
+        std::fs::write(&log_path, format!("{line}\n")).unwrap();
+
+        // Verify
+        let content = std::fs::read_to_string(&log_path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
+        assert_eq!(parsed["tool_name"], "Read");
+        assert_eq!(parsed["session_id"], "codex-session-789");
     }
 }
