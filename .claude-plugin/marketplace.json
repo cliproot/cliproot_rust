@@ -1,0 +1,12 @@
+{
+  "name": "cliproot",
+  "category": "Research",
+  "description": "Provenance tracking for AI-assisted research and multi-agent workflows. Capture sources, record derivations, and maintain audit trails across agent handoffs.",
+  "author": "cliproot",
+  "repository": "https://github.com/cliproot/cliproot-rust",
+  "homepage": "https://cliproot.dev",
+  "icon": "🔍",
+  "tags": ["provenance", "citations", "research", "audit", "multi-agent"],
+  "pricing": "free",
+  "license": "MIT"
+}
