@@ -12,13 +12,14 @@ Cliproot is a provenance-tracking system that helps you:
 
 ## Installation
 
-Install via the Claude CLI:
+Install via the Claude Code marketplace (recommended):
 
 ```bash
-claude plugin install --scope user cliproot
+claude plugin marketplace add cliproot/cliproot-rust
+claude plugin install cliproot@cliproot-rust --scope user
 ```
 
-Or install from this directory:
+Or install directly from this directory (dev/local):
 
 ```bash
 claude plugin install --scope user .
@@ -29,7 +30,7 @@ claude plugin install --scope user .
 Once installed, the plugin provides:
 
 ### MCP Tools
-Access ~24 cliproot tools for provenance capture and management
+Access 28 cliproot tools for provenance capture and management
 
 ### Slash Commands
 - `/cliproot:capture` — Start a provenance capture session

@@ -11,8 +11,24 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  verify:
+    name: Verify plugin.json version matches tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert plugin.json version matches tag
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PLUGIN_VERSION=$(jq -r .version .claude-plugin/plugin.json)
+          [ "$TAG_VERSION" = "$PLUGIN_VERSION" ] || {
+            echo "::error::tag $GITHUB_REF_NAME does not match plugin.json version $PLUGIN_VERSION"
+            exit 1
+          }
+        shell: bash
+
   build:
     name: Build ${{ matrix.target }}
+    needs: verify
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false

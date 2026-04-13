@@ -1,14 +1,23 @@
 {
   "name": "cliproot",
-  "version": "0.0.3",
+  "version": "0.3.0-rc.1",
   "description": "Provenance tracking for AI-assisted research and multi-agent workflows",
   "author": "cliproot",
+  "homepage": "https://cliproot.dev",
   "repository": "https://github.com/cliproot/cliproot-rust",
   "license": "MIT",
-  "mcpServers": {
-    "cliproot": {
-      "command": "cliproot",
-      "args": ["mcp"]
+  "keywords": ["provenance", "citations", "research", "audit", "multi-agent", "clipping"],
+  "userConfig": {
+    "level": {
+      "type": "string",
+      "enum": ["minimal", "curator", "digest", "wiki", "team"],
+      "default": "curator",
+      "description": "Knowledge automation level. Leave at 'curator' for Phase A — 'digest'/'wiki' activate in later versions."
+    },
+    "anthropic_api_key": {
+      "type": "string",
+      "default": "",
+      "description": "Forward-looking. Unused in Phase A; consumed by flush/compile in later versions."
     }
   },
   "hooksDirectory": "hooks",

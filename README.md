@@ -45,6 +45,17 @@ cliproot_rust/
 
 ## Install
 
+### Claude Code plugin (recommended for Claude Code users)
+
+Install from the Claude Code marketplace to get the MCP server, agent skills, slash commands, and hooks in one step:
+
+```bash
+claude plugin marketplace add cliproot/cliproot-rust
+claude plugin install cliproot@cliproot-rust --scope user
+```
+
+No manual MCP configuration needed — the plugin wires everything up automatically.
+
 ### From source (Rust)
 
 Requires Rust 1.88+ (pinned via `rust-toolchain.toml`). No system SQLite needed — it's bundled.
@@ -545,13 +556,13 @@ Clips are content-addressed: the same text from the same source always produces 
 
 Skill content lives in `skills/` and is the single source of truth — the binary embeds files from there via `include_str!()`, and the `.claude-plugin/` packaging copies are generated from the same source.
 
-**After editing any `skills/*/SKILL.md`**, run:
+**After editing any `skills/*/SKILL.md`**, no manual sync is needed — `.claude-plugin/skills/` symlinks directly into `skills/`. If you add a new skill, run:
 
 ```bash
 just sync-skills
 ```
 
-This copies the updated skill files into `.claude-plugin/skills/` so the plugin packaging stays in sync. CI enforces this — a PR with out-of-sync copies will fail the `skill-sync` check.
+This creates (or refreshes) the symlinks in `.claude-plugin/skills/`. CI enforces that symlinks resolve — a PR with a broken symlink will fail the `skill-symlinks` check.
 
 `just` is a command runner ([install](https://github.com/casey/just#installation): `cargo install just`, `brew install just`, or `mise use just`). The `justfile` at the repo root lists all available recipes; `just --list` shows them.
 
@@ -570,7 +581,9 @@ GitHub Actions run automatically:
   - `cargo fmt --all -- --check`
   - `cargo clippy --workspace -- -D warnings`
   - `cargo test --workspace`
-  - Skill copies in sync (`diff -q` between `skills/` and `.claude-plugin/skills/`)
+  - Skill symlinks resolve (`skill-symlinks` job)
+  - Plugin structure valid JSON + executable install script (`plugin-verify` job)
+  - Plugin hook composition test (`plugin-hook-composition` job)
 
 - **Release** (`release.yml`) — on tag push matching `v*` (e.g. `v0.1.0`):
   - Builds release binaries for Linux, macOS (x86 + ARM), and Windows
