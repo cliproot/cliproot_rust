@@ -4,8 +4,7 @@ use std::path::Path;
 use super::agent_config::ConfigAction;
 
 /// Which harness(es) to install hooks for
-#[derive(Debug, Clone, Copy)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum HarnessSelection {
     /// Install hooks for all detected harnesses (Claude + Cursor if configs exist)
     #[default]
@@ -17,7 +16,6 @@ pub enum HarnessSelection {
     #[allow(dead_code)]
     CursorOnly,
 }
-
 
 /// Install a single hook entry under `hooks.<event_name>` if not already present.
 /// Returns true if the hook was newly added.
@@ -91,15 +89,13 @@ pub fn install_hooks_for(
         || root.join(".claude/settings.json").exists();
     let cursor_mcp_exists = root.join(".cursor/mcp.json").exists();
 
-    if install_claude && (matches!(selection, HarnessSelection::ClaudeOnly) || claude_mcp_exists)
-    {
+    if install_claude && (matches!(selection, HarnessSelection::ClaudeOnly) || claude_mcp_exists) {
         if let Ok(action) = install_claude_hooks(root) {
             actions.push(action);
         }
     }
 
-    if install_cursor && (matches!(selection, HarnessSelection::CursorOnly) || cursor_mcp_exists)
-    {
+    if install_cursor && (matches!(selection, HarnessSelection::CursorOnly) || cursor_mcp_exists) {
         if let Ok(action) = install_cursor_hooks(root) {
             actions.push(action);
         }
@@ -134,8 +130,11 @@ fn install_claude_hooks(root: &Path) -> Result<ConfigAction, Box<dyn std::error:
     let mut any_added = false;
     any_added |= install_hook_entry(hooks_obj, "PostToolUse", "cliproot capture-hook")?;
     any_added |= install_hook_entry(hooks_obj, "Stop", "cliproot consolidate-hook")?;
-    any_added |=
-        install_hook_entry(hooks_obj, "PreCompact", "cliproot consolidate-hook --emergency")?;
+    any_added |= install_hook_entry(
+        hooks_obj,
+        "PreCompact",
+        "cliproot consolidate-hook --emergency",
+    )?;
 
     if !any_added {
         return Ok(ConfigAction::Skipped(path));
@@ -254,9 +253,7 @@ fn merge_cursor_hooks(
         .entry("hooks")
         .or_insert_with(|| serde_json::json!({}));
 
-    let hooks_map = hooks_obj
-        .as_object_mut()
-        .ok_or("hooks is not an object")?;
+    let hooks_map = hooks_obj.as_object_mut().ok_or("hooks is not an object")?;
 
     let new_hooks_map = new_hooks
         .get("hooks")
@@ -276,10 +273,7 @@ fn merge_cursor_hooks(
             for new_entry in new_entries_arr {
                 let cmd = new_entry.get("command").and_then(|c| c.as_str());
                 let already_exists = arr.iter().any(|existing_entry| {
-                    existing_entry
-                        .get("command")
-                        .and_then(|c| c.as_str())
-                        == cmd
+                    existing_entry.get("command").and_then(|c| c.as_str()) == cmd
                 });
 
                 if !already_exists {
@@ -378,9 +372,10 @@ mod tests {
         .unwrap();
 
         let actions = install_hooks(dir.path()).unwrap();
-        let action = actions.iter().find(|a| {
-            a.path_display(dir.path()).contains("settings.json")
-        }).expect("should have installed Claude hooks");
+        let action = actions
+            .iter()
+            .find(|a| a.path_display(dir.path()).contains("settings.json"))
+            .expect("should have installed Claude hooks");
         assert!(matches!(action, ConfigAction::Merged(_)));
 
         let content: serde_json::Value =
@@ -410,7 +405,9 @@ mod tests {
 
         // Should install both Claude and Cursor hooks
         assert!(
-            actions.iter().any(|a| a.path_display(dir.path()).contains("hooks.json")),
+            actions
+                .iter()
+                .any(|a| a.path_display(dir.path()).contains("hooks.json")),
             "should install Cursor hooks"
         );
 
@@ -493,7 +490,9 @@ mod tests {
 
         // Should only have Claude action
         assert_eq!(actions.len(), 1);
-        assert!(actions[0].path_display(dir.path()).contains("settings.json"));
+        assert!(actions[0]
+            .path_display(dir.path())
+            .contains("settings.json"));
     }
 
     #[test]

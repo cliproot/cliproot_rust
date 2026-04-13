@@ -79,7 +79,8 @@ pub fn run(harness: Harness, emergency: bool) -> Result<(), Box<dyn std::error::
             None => 0,
         };
 
-        let effective_interval = compute_effective_interval(&cliproot_dir, &hook.session_id, &config);
+        let effective_interval =
+            compute_effective_interval(&cliproot_dir, &hook.session_id, &config);
 
         let messages_since = message_count.saturating_sub(watermark.message_count);
 

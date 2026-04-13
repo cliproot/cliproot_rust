@@ -5,7 +5,11 @@ pub use hook_config::HarnessSelection;
 
 use cliproot_store::{Repository, StoreError};
 
-pub fn run(agent: bool, hooks: bool, hooks_for: Option<HarnessSelection>) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(
+    agent: bool,
+    hooks: bool,
+    hooks_for: Option<HarnessSelection>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let cwd = std::env::current_dir()?;
 
     match Repository::init(&cwd) {
@@ -41,7 +45,10 @@ pub fn run(agent: bool, hooks: bool, hooks_for: Option<HarnessSelection>) -> Res
         std::fs::create_dir_all(&log_dir)?;
 
         if actions.len() > 1 {
-            println!("\nPostToolUse + Stop + PreCompact hooks installed for {} harnesses.", actions.len());
+            println!(
+                "\nPostToolUse + Stop + PreCompact hooks installed for {} harnesses.",
+                actions.len()
+            );
         } else {
             println!("\nPostToolUse + Stop + PreCompact hooks installed.");
         }

@@ -885,10 +885,7 @@ impl ClipRootService {
     ) -> Result<CallToolResult, ErrorData> {
         let session_id = params.session_id.unwrap_or_default();
         if session_id.is_empty() {
-            return Err(ErrorData::invalid_params(
-                "session_id is required",
-                None,
-            ));
+            return Err(ErrorData::invalid_params("session_id is required", None));
         }
         // Shell out to `cliproot consolidate` to avoid circular crate dependency
         let mut cmd = std::process::Command::new("cliproot");

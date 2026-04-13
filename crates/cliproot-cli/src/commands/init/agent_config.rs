@@ -38,8 +38,16 @@ pub fn generate_all(root: &Path) -> Result<Vec<ConfigAction>, Box<dyn std::error
 
     // Claude Code
     actions.push(upsert_mcp_json(root, ".mcp.json", "mcpServers")?);
-    actions.extend(write_skill_dir(root, ".claude/skills/cliproot-capture", skills::SKILL_MD)?);
-    actions.extend(write_skill_dir(root, ".claude/skills/cliproot-session", skills::SESSION_SKILL_MD)?);
+    actions.extend(write_skill_dir(
+        root,
+        ".claude/skills/cliproot-capture",
+        skills::SKILL_MD,
+    )?);
+    actions.extend(write_skill_dir(
+        root,
+        ".claude/skills/cliproot-session",
+        skills::SESSION_SKILL_MD,
+    )?);
 
     // Cursor
     actions.push(upsert_mcp_json(root, ".cursor/mcp.json", "mcpServers")?);
@@ -60,14 +68,38 @@ pub fn generate_all(root: &Path) -> Result<Vec<ConfigAction>, Box<dyn std::error
     actions.push(upsert_mcp_json(root, ".vscode/mcp.json", "servers")?);
 
     // Universal Agent Skills (Codex, Gemini CLI, Junie, Goose, etc.)
-    actions.extend(write_skill_dir(root, ".agents/skills/cliproot-capture", skills::SKILL_MD)?);
-    actions.push(write_codex_yaml(root, ".agents/skills/cliproot-capture/agents/openai.yaml", skills::OPENAI_YAML)?);
-    actions.extend(write_skill_dir(root, ".agents/skills/cliproot-session", skills::SESSION_SKILL_MD)?);
-    actions.push(write_codex_yaml(root, ".agents/skills/cliproot-session/agents/openai.yaml", skills::SESSION_OPENAI_YAML)?);
+    actions.extend(write_skill_dir(
+        root,
+        ".agents/skills/cliproot-capture",
+        skills::SKILL_MD,
+    )?);
+    actions.push(write_codex_yaml(
+        root,
+        ".agents/skills/cliproot-capture/agents/openai.yaml",
+        skills::OPENAI_YAML,
+    )?);
+    actions.extend(write_skill_dir(
+        root,
+        ".agents/skills/cliproot-session",
+        skills::SESSION_SKILL_MD,
+    )?);
+    actions.push(write_codex_yaml(
+        root,
+        ".agents/skills/cliproot-session/agents/openai.yaml",
+        skills::SESSION_OPENAI_YAML,
+    )?);
 
     // Windsurf
-    actions.push(write_windsurf_rule(root, ".windsurf/rules/cliproot-capture.md", skills::SKILL_MD)?);
-    actions.push(write_windsurf_rule(root, ".windsurf/rules/cliproot-session.md", skills::SESSION_SKILL_MD)?);
+    actions.push(write_windsurf_rule(
+        root,
+        ".windsurf/rules/cliproot-capture.md",
+        skills::SKILL_MD,
+    )?);
+    actions.push(write_windsurf_rule(
+        root,
+        ".windsurf/rules/cliproot-session.md",
+        skills::SESSION_SKILL_MD,
+    )?);
 
     Ok(actions)
 }
@@ -153,9 +185,7 @@ fn write_cursor_rule(
     content: &str,
 ) -> Result<ConfigAction, Box<dyn std::error::Error>> {
     let body = strip_yaml_frontmatter(content);
-    let out = format!(
-        "---\ndescription: \"{description}\"\nalwaysApply: false\n---\n{body}"
-    );
+    let out = format!("---\ndescription: \"{description}\"\nalwaysApply: false\n---\n{body}");
     write_file(root.join(rel), &out)
 }
 
@@ -293,9 +323,12 @@ mod tests {
     #[test]
     fn test_skill_directory_complete() {
         let dir = tempfile::tempdir().unwrap();
-        let actions =
-            write_skill_dir(dir.path(), ".claude/skills/cliproot-capture", skills::SKILL_MD)
-                .unwrap();
+        let actions = write_skill_dir(
+            dir.path(),
+            ".claude/skills/cliproot-capture",
+            skills::SKILL_MD,
+        )
+        .unwrap();
         assert_eq!(actions.len(), 1);
 
         let base = dir.path().join(".claude/skills/cliproot-capture");
@@ -330,19 +363,49 @@ mod tests {
 
         // Spot check capture files
         assert!(dir.path().join(".mcp.json").exists());
-        assert!(dir.path().join(".claude/skills/cliproot-capture/SKILL.md").exists());
+        assert!(dir
+            .path()
+            .join(".claude/skills/cliproot-capture/SKILL.md")
+            .exists());
         assert!(dir.path().join(".cursor/mcp.json").exists());
-        assert!(dir.path().join(".cursor/rules/cliproot-capture.mdc").exists());
+        assert!(dir
+            .path()
+            .join(".cursor/rules/cliproot-capture.mdc")
+            .exists());
         assert!(dir.path().join(".vscode/mcp.json").exists());
-        assert!(dir.path().join(".agents/skills/cliproot-capture/SKILL.md").exists());
-        assert!(dir.path().join(".agents/skills/cliproot-capture/agents/openai.yaml").exists());
-        assert!(dir.path().join(".windsurf/rules/cliproot-capture.md").exists());
+        assert!(dir
+            .path()
+            .join(".agents/skills/cliproot-capture/SKILL.md")
+            .exists());
+        assert!(dir
+            .path()
+            .join(".agents/skills/cliproot-capture/agents/openai.yaml")
+            .exists());
+        assert!(dir
+            .path()
+            .join(".windsurf/rules/cliproot-capture.md")
+            .exists());
 
         // Spot check session files
-        assert!(dir.path().join(".claude/skills/cliproot-session/SKILL.md").exists());
-        assert!(dir.path().join(".cursor/rules/cliproot-session.mdc").exists());
-        assert!(dir.path().join(".agents/skills/cliproot-session/SKILL.md").exists());
-        assert!(dir.path().join(".agents/skills/cliproot-session/agents/openai.yaml").exists());
-        assert!(dir.path().join(".windsurf/rules/cliproot-session.md").exists());
+        assert!(dir
+            .path()
+            .join(".claude/skills/cliproot-session/SKILL.md")
+            .exists());
+        assert!(dir
+            .path()
+            .join(".cursor/rules/cliproot-session.mdc")
+            .exists());
+        assert!(dir
+            .path()
+            .join(".agents/skills/cliproot-session/SKILL.md")
+            .exists());
+        assert!(dir
+            .path()
+            .join(".agents/skills/cliproot-session/agents/openai.yaml")
+            .exists());
+        assert!(dir
+            .path()
+            .join(".windsurf/rules/cliproot-session.md")
+            .exists());
     }
 }

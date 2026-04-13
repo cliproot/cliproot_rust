@@ -847,9 +847,9 @@ impl IndexDb {
     }
 
     pub fn find_sources_by_uri(&self, uri: &str) -> Result<Vec<SourceRow>, StoreError> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT id, source_type, title, source_uri FROM sources WHERE source_uri = ?1")?;
+        let mut stmt = self.conn.prepare(
+            "SELECT id, source_type, title, source_uri FROM sources WHERE source_uri = ?1",
+        )?;
         let rows = stmt.query_map(params![uri], |row| {
             Ok(SourceRow {
                 id: row.get(0)?,

@@ -22,10 +22,6 @@ pub enum Harness {
     Codex,
 }
 
-
-
-
-
 /// Normalized hook input event, common across all harnesses.
 #[derive(Debug, Clone)]
 pub struct NormalizedHookEvent {
@@ -138,9 +134,7 @@ pub fn parse_claude_code_stop(
 }
 
 /// Parse Cursor hook JSON into normalized event.
-pub fn parse_cursor_hook(
-    input: &str,
-) -> Result<NormalizedHookEvent, Box<dyn std::error::Error>> {
+pub fn parse_cursor_hook(input: &str) -> Result<NormalizedHookEvent, Box<dyn std::error::Error>> {
     let hook: CursorHookInput = serde_json::from_str(input)?;
 
     Ok(NormalizedHookEvent {
@@ -156,9 +150,7 @@ pub fn parse_cursor_hook(
 }
 
 /// Parse Codex hook JSON into normalized event.
-pub fn parse_codex_hook(
-    input: &str,
-) -> Result<NormalizedHookEvent, Box<dyn std::error::Error>> {
+pub fn parse_codex_hook(input: &str) -> Result<NormalizedHookEvent, Box<dyn std::error::Error>> {
     let hook: CodexHookInput = serde_json::from_str(input)?;
 
     Ok(NormalizedHookEvent {
@@ -225,19 +217,15 @@ pub fn parse_stop_input(
 /// - Cursor: `{"followup_message": "..."}`
 pub fn emit_consolidation_block(harness: Harness, reason: &str) -> String {
     match harness {
-        Harness::ClaudeCode | Harness::Codex => {
-            serde_json::json!({
-                "decision": "block",
-                "reason": reason,
-            })
-            .to_string()
-        }
-        Harness::Cursor => {
-            serde_json::json!({
-                "followup_message": reason,
-            })
-            .to_string()
-        }
+        Harness::ClaudeCode | Harness::Codex => serde_json::json!({
+            "decision": "block",
+            "reason": reason,
+        })
+        .to_string(),
+        Harness::Cursor => serde_json::json!({
+            "followup_message": reason,
+        })
+        .to_string(),
     }
 }
 
@@ -290,7 +278,10 @@ mod tests {
         let event = parse_claude_code_stop(input).unwrap();
         assert_eq!(event.session_id, "sess-456");
         assert_eq!(event.cwd, "/home/user/project");
-        assert_eq!(event.transcript_path, Some("/tmp/transcript.jsonl".to_string()));
+        assert_eq!(
+            event.transcript_path,
+            Some("/tmp/transcript.jsonl".to_string())
+        );
     }
 
     // ── Cursor parsing ───────────────────────────────────────────────────
@@ -331,7 +322,10 @@ mod tests {
         let event = parse_codex_hook(input).unwrap();
         assert_eq!(event.session_id, "sess-codex-001");
         assert_eq!(event.tool_name, "Read");
-        assert_eq!(event.transcript_path, Some("/tmp/codex-transcript.jsonl".to_string()));
+        assert_eq!(
+            event.transcript_path,
+            Some("/tmp/codex-transcript.jsonl".to_string())
+        );
     }
 
     // ── Response emission ────────────────────────────────────────────────
@@ -366,5 +360,4 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
         assert_eq!(parsed["user_message"], "Noted pre-compact");
     }
-
 }

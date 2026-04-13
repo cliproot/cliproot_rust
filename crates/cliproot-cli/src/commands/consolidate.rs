@@ -197,7 +197,11 @@ pub fn run_consolidation(
     }
 
     // 6. Extract file candidates (reference files outside project tree, not modified)
-    let modified_set: HashSet<&str> = enrichment.files_modified.iter().map(|s| s.as_str()).collect();
+    let modified_set: HashSet<&str> = enrichment
+        .files_modified
+        .iter()
+        .map(|s| s.as_str())
+        .collect();
     let mut file_counts: std::collections::HashMap<String, (usize, DateTime<Utc>)> =
         std::collections::HashMap::new();
     for entry in slice {
@@ -301,10 +305,7 @@ impl CandidateList {
         if !self.candidates.sources.is_empty() {
             let mut section = String::from("  Sources:\n");
             for s in &self.candidates.sources {
-                section.push_str(&format!(
-                    "  - {} (accessed {}x)\n",
-                    s.url, s.times_accessed
-                ));
+                section.push_str(&format!("  - {} (accessed {}x)\n", s.url, s.times_accessed));
             }
             parts.push(section);
         }
@@ -378,7 +379,13 @@ fn detect_syntheses(
         let cutoff_time = entry.timestamp - lookback_duration;
         let start_idx = i.saturating_sub(config.synthesis_lookback_entries);
 
-        for prev in entries.iter().take(i).skip(start_idx).cloned().collect::<Vec<_>>() {
+        for prev in entries
+            .iter()
+            .take(i)
+            .skip(start_idx)
+            .cloned()
+            .collect::<Vec<_>>()
+        {
             if prev.timestamp < cutoff_time {
                 continue;
             }
@@ -532,8 +539,14 @@ mod tests {
     fn excluded_url_patterns() {
         let patterns = vec!["crates.io".into(), "npmjs.com".into()];
         assert!(is_excluded_url("https://crates.io/crates/serde", &patterns));
-        assert!(is_excluded_url("https://www.npmjs.com/package/foo", &patterns));
-        assert!(!is_excluded_url("https://docs.rust-lang.org/book/", &patterns));
+        assert!(is_excluded_url(
+            "https://www.npmjs.com/package/foo",
+            &patterns
+        ));
+        assert!(!is_excluded_url(
+            "https://docs.rust-lang.org/book/",
+            &patterns
+        ));
     }
 
     #[test]

@@ -539,7 +539,9 @@ fn main() {
             emergency,
             commit,
         } => commands::consolidate::run(&session, emergency, commit, &cli.format),
-        Commands::ConsolidateHook { harness, emergency } => commands::consolidate_hook::run(harness, emergency),
+        Commands::ConsolidateHook { harness, emergency } => {
+            commands::consolidate_hook::run(harness, emergency)
+        }
         Commands::Record {
             session,
             session_dir,
