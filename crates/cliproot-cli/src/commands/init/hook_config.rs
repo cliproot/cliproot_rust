@@ -130,6 +130,7 @@ fn install_claude_hooks(root: &Path) -> Result<ConfigAction, Box<dyn std::error:
     let mut any_added = false;
     any_added |= install_hook_entry(hooks_obj, "PostToolUse", "cliproot capture-hook")?;
     any_added |= install_hook_entry(hooks_obj, "Stop", "cliproot consolidate-hook")?;
+    any_added |= install_hook_entry(hooks_obj, "Stop", "cliproot flush-hook")?;
     any_added |= install_hook_entry(
         hooks_obj,
         "PreCompact",
@@ -309,6 +310,9 @@ mod tests {
         let stop_hook = &content["hooks"]["Stop"][0]["hooks"][0];
         assert_eq!(stop_hook["command"], "cliproot consolidate-hook");
 
+        let flush_stop_hook = &content["hooks"]["Stop"][1]["hooks"][0];
+        assert_eq!(flush_stop_hook["command"], "cliproot flush-hook");
+
         let precompact_hook = &content["hooks"]["PreCompact"][0]["hooks"][0];
         assert_eq!(
             precompact_hook["command"],
@@ -351,7 +355,7 @@ mod tests {
         fs::create_dir_all(&claude_dir).unwrap();
         fs::write(
             claude_dir.join("settings.json"),
-            r#"{"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":"cliproot capture-hook"}]}],"Stop":[{"hooks":[{"type":"command","command":"cliproot consolidate-hook"}]}],"PreCompact":[{"hooks":[{"type":"command","command":"cliproot consolidate-hook --emergency"}]}]}}"#,
+            r#"{"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":"cliproot capture-hook"}]}],"Stop":[{"hooks":[{"type":"command","command":"cliproot consolidate-hook"}]},{"hooks":[{"type":"command","command":"cliproot flush-hook"}]}],"PreCompact":[{"hooks":[{"type":"command","command":"cliproot consolidate-hook --emergency"}]}]}}"#,
         )
         .unwrap();
 

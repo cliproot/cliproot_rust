@@ -24,6 +24,78 @@ use crate::pack::{
 
 const PROTOCOL_VERSION: &str = "0.0.3";
 
+// ── Knowledge configuration ───────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum KnowledgeLevel {
+    Minimal,
+    #[default]
+    Curator,
+    Digest,
+    Wiki,
+    Team,
+}
+
+impl KnowledgeLevel {
+    /// Returns true when this level allows the flush-hook to run.
+    pub fn allows_flush(&self) -> bool {
+        matches!(self, Self::Digest | Self::Wiki | Self::Team)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnowledgeModelsConfig {
+    #[serde(default = "default_flush_model")]
+    pub flush: String,
+    #[serde(default = "default_compile_model")]
+    pub compile: String,
+}
+
+fn default_flush_model() -> String {
+    "claude-haiku-4-5-20251001".to_string()
+}
+fn default_compile_model() -> String {
+    "claude-sonnet-4-6".to_string()
+}
+
+impl Default for KnowledgeModelsConfig {
+    fn default() -> Self {
+        Self {
+            flush: default_flush_model(),
+            compile: default_compile_model(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct KnowledgeConfig {
+    pub level: KnowledgeLevel,
+    pub models: KnowledgeModelsConfig,
+    #[serde(default = "default_max_bg_tokens")]
+    pub max_bg_tokens_per_day: u64,
+    #[serde(default = "default_max_bg_cost")]
+    pub max_bg_cost_per_day_usd: f64,
+}
+
+fn default_max_bg_tokens() -> u64 {
+    100_000
+}
+fn default_max_bg_cost() -> f64 {
+    0.50
+}
+
+fn is_knowledge_default(k: &KnowledgeConfig) -> bool {
+    k.level == KnowledgeLevel::Curator
+        && k.models == KnowledgeModelsConfig::default()
+        && k.max_bg_tokens_per_day == 100_000
+        && k.max_bg_cost_per_day_usd == 0.50
+}
+
+// ── Remote configuration ──────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteConfig {
@@ -42,6 +114,8 @@ struct RepoConfig {
     remotes: HashMap<String, RemoteConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     default_remote: Option<String>,
+    #[serde(default, skip_serializing_if = "is_knowledge_default")]
+    knowledge: KnowledgeConfig,
 }
 
 pub struct Repository {
@@ -88,6 +162,7 @@ impl Repository {
             current_project_id: None,
             remotes: HashMap::new(),
             default_remote: None,
+            knowledge: KnowledgeConfig::default(),
         };
         fs::write(
             cliproot_dir.join("config.json"),
@@ -160,9 +235,22 @@ impl Repository {
                 current_project_id: None,
                 remotes: HashMap::new(),
                 default_remote: None,
+                knowledge: KnowledgeConfig::default(),
             })?;
         }
         Ok(())
+    }
+
+    /// Return the knowledge configuration (level, models, budgets).
+    pub fn knowledge_config(&self) -> Result<KnowledgeConfig, StoreError> {
+        Ok(self.read_config()?.knowledge)
+    }
+
+    /// Persist an updated knowledge configuration.
+    pub fn set_knowledge_config(&self, knowledge: KnowledgeConfig) -> Result<(), StoreError> {
+        let mut config = self.read_config()?;
+        config.knowledge = knowledge;
+        self.write_config(&config)
     }
 
     fn read_config(&self) -> Result<RepoConfig, StoreError> {

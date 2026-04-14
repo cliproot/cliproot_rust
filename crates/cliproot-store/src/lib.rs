@@ -8,4 +8,6 @@ pub use error::StoreError;
 pub use pack::{
     PackArtifactEntry, PackCounts, PackManifest, PackObjectEntry, PackRootMode, PackRoots,
 };
-pub use repository::{RemoteConfig, Repository, SessionRecord};
+pub use repository::{
+    KnowledgeConfig, KnowledgeLevel, KnowledgeModelsConfig, RemoteConfig, Repository, SessionRecord,
+};

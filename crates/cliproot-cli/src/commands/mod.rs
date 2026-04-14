@@ -1,5 +1,7 @@
 pub mod activity;
 pub mod annotate;
+pub mod config;
+pub mod flush_hook;
 pub mod artifact;
 pub mod capture_hook;
 pub mod cite;

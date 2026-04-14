@@ -18,6 +18,14 @@
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/cliproot-consolidate-hook.sh"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/cliproot-flush-hook.sh"
+          }
+        ]
       }
     ],
     "PreCompact": [

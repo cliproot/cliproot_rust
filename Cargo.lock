@@ -264,6 +264,7 @@ dependencies = [
 name = "cliproot-cli"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "chrono",
  "clap",
  "cliproot-clipboard",
@@ -272,9 +273,12 @@ dependencies = [
  "cliproot-registry",
  "cliproot-store",
  "colored",
+ "libc",
  "open",
+ "reqwest",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",

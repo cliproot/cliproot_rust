@@ -1,4 +1,5 @@
 mod commands;
+mod knowledge;
 mod output;
 mod skills;
 mod transcript;
@@ -72,6 +73,22 @@ enum Commands {
         /// Emergency mode for PreCompact hooks
         #[arg(long)]
         emergency: bool,
+    },
+
+    /// Handle Stop hook events: spawn a detached background flush process (reads JSON from stdin)
+    #[command(name = "flush-hook")]
+    FlushHook {
+        /// AI harness (claude-code, cursor, codex)
+        #[arg(long, value_enum, default_value = "claude-code")]
+        harness: commands::harness::Harness,
+
+        /// Internal flag: run flush in the foreground (used by the spawned child)
+        #[arg(long, hide = true)]
+        background: bool,
+
+        /// Path to .cliproot/ directory (required when --background is set)
+        #[arg(long, hide = true)]
+        cliproot_dir: Option<std::path::PathBuf>,
     },
 
     /// Reconstruct a design record from a Claude Code session
@@ -381,6 +398,28 @@ enum Commands {
         #[command(subcommand)]
         command: SessionCommands,
     },
+
+    /// Read or write a repository config key (e.g. knowledge.level)
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConfigAction {
+    /// Print the current value of a config key
+    Get {
+        /// Config key (e.g. knowledge.level)
+        key: String,
+    },
+    /// Set a config key to a new value
+    Set {
+        /// Config key (e.g. knowledge.level)
+        key: String,
+        /// New value
+        value: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -542,6 +581,11 @@ fn main() {
         Commands::ConsolidateHook { harness, emergency } => {
             commands::consolidate_hook::run(harness, emergency)
         }
+        Commands::FlushHook {
+            harness,
+            background,
+            cliproot_dir,
+        } => commands::flush_hook::run(harness, background, cliproot_dir),
         Commands::Record {
             session,
             session_dir,
@@ -764,6 +808,10 @@ fn main() {
                 &cli.format,
             ),
             SessionCommands::End { session_id } => commands::session::end(&session_id, &cli.format),
+        },
+        Commands::Config { action } => match action {
+            ConfigAction::Get { key } => commands::config::get(&key),
+            ConfigAction::Set { key, value } => commands::config::set(&key, &value),
         },
     };
 
