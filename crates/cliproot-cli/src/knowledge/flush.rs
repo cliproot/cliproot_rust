@@ -1,7 +1,9 @@
 use std::fs;
 use std::path::Path;
 
-use cliproot_core::model::{ActivityType, ArtifactType, ClipArtifactRelationship, CrpBundle, CrpId};
+use cliproot_core::model::{
+    ActivityType, ArtifactType, ClipArtifactRelationship, CrpBundle, CrpId,
+};
 use cliproot_store::Repository;
 
 use super::article;
@@ -12,7 +14,10 @@ use super::state::{self, FlushState};
 
 #[derive(Debug)]
 pub enum FlushOutcome {
-    Success { digest_path: String, tokens_used: u64 },
+    Success {
+        digest_path: String,
+        tokens_used: u64,
+    },
     Skipped(String),
     BudgetExceeded(String),
     Error(String),
@@ -21,7 +26,10 @@ pub enum FlushOutcome {
 impl std::fmt::Display for FlushOutcome {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Success { digest_path, tokens_used } => {
+            Self::Success {
+                digest_path,
+                tokens_used,
+            } => {
                 write!(f, "SUCCESS digest={digest_path} tokens={tokens_used}")
             }
             Self::Skipped(reason) => write!(f, "SKIPPED {reason}"),
@@ -44,10 +52,7 @@ const MAX_OUTPUT_TOKENS: u32 = 2_048;
 /// Run the daily flush: synthesise a digest from today's agent-log entries,
 /// write it to `.cliproot/knowledge/daily/YYYY-MM-DD.md`, and record
 /// provenance in the CRP repository.
-pub fn run_flush(
-    cliproot_dir: &Path,
-    repo: &Repository,
-) -> FlushOutcome {
+pub fn run_flush(cliproot_dir: &Path, repo: &Repository) -> FlushOutcome {
     match run_flush_inner(cliproot_dir, repo) {
         Ok(outcome) => outcome,
         Err(e) => FlushOutcome::Error(e.to_string()),
@@ -74,10 +79,7 @@ fn run_flush_inner(
 
     // ── Budget pre-check ──────────────────────────────────────────────────
     if let Err(e) = llm::check_budget(&flush_state, &cfg, ESTIMATED_TOKENS_PER_FLUSH) {
-        append_log_line(
-            &knowledge_dir,
-            &format!("BUDGET_EXCEEDED {}", e.reason),
-        );
+        append_log_line(&knowledge_dir, &format!("BUDGET_EXCEEDED {}", e.reason));
         return Ok(FlushOutcome::BudgetExceeded(e.reason));
     }
 
@@ -117,14 +119,16 @@ fn run_flush_inner(
     // ── Link clips to artifact (GeneratedFrom) ────────────────────────────
     let mut linked_clip_hashes: Vec<String> = Vec::new();
     for clip_hash in &clip_hashes {
-        match repo.link_clip_artifact(
-            clip_hash,
-            &artifact_hash,
-            ClipArtifactRelationship::GeneratedFrom,
-        ) {
-            Ok(_) => linked_clip_hashes.push(clip_hash.clone()),
-            Err(_) => {} // clip not in repo — skip silently
-        }
+        if repo
+            .link_clip_artifact(
+                clip_hash,
+                &artifact_hash,
+                ClipArtifactRelationship::GeneratedFrom,
+            )
+            .is_ok()
+        {
+            linked_clip_hashes.push(clip_hash.clone());
+        } // else: clip not in repo — skip silently
     }
 
     // ── Record LLM call as a CRP Activity ────────────────────────────────
@@ -207,10 +211,7 @@ fn record_flush_activity(
 
 /// Collect new JSONL log lines (since watermarks) across all agent-log files.
 /// Returns `(lines_for_prompt, clip_hashes_seen)`.
-fn collect_new_lines(
-    log_dir: &Path,
-    flush_state: &FlushState,
-) -> (Vec<String>, Vec<String>) {
+fn collect_new_lines(log_dir: &Path, flush_state: &FlushState) -> (Vec<String>, Vec<String>) {
     let mut all_new: Vec<String> = Vec::new();
     let mut clip_hashes: Vec<String> = Vec::new();
 
@@ -220,9 +221,15 @@ fn collect_new_lines(
 
     for entry in entries.flatten() {
         let path = entry.path();
-        let Some(ext) = path.extension() else { continue };
-        if ext != "jsonl" { continue }
-        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else { continue };
+        let Some(ext) = path.extension() else {
+            continue;
+        };
+        if ext != "jsonl" {
+            continue;
+        }
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
         if stem.starts_with("watermark-") || stem.starts_with("precompact-hinted-") {
             continue;
         }
@@ -289,18 +296,28 @@ fn extract_clip_hashes_from_line(line: &str, out: &mut Vec<String>) {
 
 /// Update watermark counts to the current line counts in the log directory.
 fn update_state_watermarks(flush_state: &mut FlushState, log_dir: &Path) {
-    let Ok(entries) = fs::read_dir(log_dir) else { return };
+    let Ok(entries) = fs::read_dir(log_dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
-        let Some(ext) = path.extension() else { continue };
-        if ext != "jsonl" { continue }
-        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else { continue };
+        let Some(ext) = path.extension() else {
+            continue;
+        };
+        if ext != "jsonl" {
+            continue;
+        }
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
         if stem.starts_with("watermark-") || stem.starts_with("precompact-hinted-") {
             continue;
         }
         let content = fs::read_to_string(&path).unwrap_or_default();
         let count = content.lines().filter(|l| !l.trim().is_empty()).count() as u64;
-        flush_state.last_flushed_line_counts.insert(stem.to_string(), count);
+        flush_state
+            .last_flushed_line_counts
+            .insert(stem.to_string(), count);
     }
 }
 
@@ -324,9 +341,7 @@ Be factual. Do not invent details not present in the log. Omit sections with no 
 
 fn build_user_prompt(date: &str, lines: &[String]) -> String {
     let log_text = lines.join("\n");
-    format!(
-        "Today's date: {date}\n\nSession log (tool calls):\n{log_text}"
-    )
+    format!("Today's date: {date}\n\nSession log (tool calls):\n{log_text}")
 }
 
 // ── Log file helper ───────────────────────────────────────────────────────────
@@ -349,7 +364,8 @@ mod tests {
 
     #[test]
     fn extract_clip_hashes_finds_sha256() {
-        let line = r#"{"clip_hash":"sha256-abc123def456abc123def456abc123def456abc123d","tool":"Read"}"#;
+        let line =
+            r#"{"clip_hash":"sha256-abc123def456abc123def456abc123def456abc123d","tool":"Read"}"#;
         let mut out = Vec::new();
         extract_clip_hashes_from_line(line, &mut out);
         assert_eq!(out.len(), 1);

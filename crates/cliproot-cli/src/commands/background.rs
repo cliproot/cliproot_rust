@@ -13,8 +13,8 @@ use std::process::{Command, Stdio};
 /// The env var `CLAUDE_INVOKED_BY` is set on the child as a recursion guard —
 /// nested hooks inside the child see it and skip re-spawning.
 pub fn spawn(args: &[&str], invoked_by: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let exe = std::env::current_exe()
-        .map_err(|e| format!("cannot locate cliproot executable: {e}"))?;
+    let exe =
+        std::env::current_exe().map_err(|e| format!("cannot locate cliproot executable: {e}"))?;
 
     let mut cmd = Command::new(&exe);
     cmd.args(args)

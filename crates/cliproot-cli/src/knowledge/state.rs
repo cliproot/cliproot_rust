@@ -115,7 +115,11 @@ pub fn total_new_lines(
 
         let content = fs::read_to_string(&path).unwrap_or_default();
         let line_count = content.lines().filter(|l| !l.trim().is_empty()).count() as u64;
-        let watermark = state.last_flushed_line_counts.get(stem).copied().unwrap_or(0);
+        let watermark = state
+            .last_flushed_line_counts
+            .get(stem)
+            .copied()
+            .unwrap_or(0);
         total += line_count.saturating_sub(watermark);
     }
 
@@ -148,7 +152,9 @@ mod tests {
         let mut state = FlushState::default();
         state.daily_total_tokens = 12_345;
         state.daily_total_cost_usd = 0.12;
-        state.last_flushed_line_counts.insert("abc123".to_string(), 50);
+        state
+            .last_flushed_line_counts
+            .insert("abc123".to_string(), 50);
 
         save(&state, dir.path()).unwrap();
         let loaded = load(dir.path()).unwrap();
@@ -239,11 +245,7 @@ mod tests {
 
         fs::write(log_dir.join("sess.jsonl"), "{}\n").unwrap();
         // Watermark file — should not be counted
-        fs::write(
-            log_dir.join("watermark-sess.jsonl"),
-            "{\"line_count\":5}\n",
-        )
-        .unwrap();
+        fs::write(log_dir.join("watermark-sess.jsonl"), "{\"line_count\":5}\n").unwrap();
 
         let state = FlushState::default();
         let new = total_new_lines(&state, &log_dir).unwrap();

@@ -151,10 +151,7 @@ pub fn call(
     let body_text = response.text()?;
 
     if !status.is_success() {
-        return Err(format!(
-            "Anthropic API error {status}: {body_text}"
-        )
-        .into());
+        return Err(format!("Anthropic API error {status}: {body_text}").into());
     }
 
     let parsed: AnthropicResponse = serde_json::from_str(&body_text)
@@ -173,8 +170,8 @@ pub fn call(
     let total_tokens = input_tokens + output_tokens;
 
     // Haiku-4-5 pricing: $1/M input, $5/M output
-    let estimated_cost_usd = (input_tokens as f64 / 1_000_000.0) * 1.0
-        + (output_tokens as f64 / 1_000_000.0) * 5.0;
+    let estimated_cost_usd =
+        (input_tokens as f64 / 1_000_000.0) * 1.0 + (output_tokens as f64 / 1_000_000.0) * 5.0;
 
     Ok(LlmCallResult {
         text,
@@ -202,12 +199,10 @@ fn resolve_api_key() -> Result<String, Box<dyn std::error::Error>> {
         return Ok(key);
     }
 
-    Err(
-        "No Anthropic API key found.\n\
+    Err("No Anthropic API key found.\n\
          Set ANTHROPIC_API_KEY environment variable, or sign in to Claude Code \
          (which stores credentials in ~/.claude/.credentials.json)."
-            .into(),
-    )
+        .into())
 }
 
 fn read_claude_credentials() -> Option<String> {
@@ -227,13 +222,10 @@ fn read_claude_credentials() -> Option<String> {
 }
 
 fn home_dir() -> Option<PathBuf> {
-    std::env::var("HOME")
-        .ok()
-        .map(PathBuf::from)
-        .or_else(|| {
-            // Windows fallback
-            std::env::var("USERPROFILE").ok().map(PathBuf::from)
-        })
+    std::env::var("HOME").ok().map(PathBuf::from).or_else(|| {
+        // Windows fallback
+        std::env::var("USERPROFILE").ok().map(PathBuf::from)
+    })
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────

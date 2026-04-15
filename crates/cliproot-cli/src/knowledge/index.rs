@@ -127,9 +127,9 @@ pub fn select_articles_for_compile<'a>(
         .filter(|e| {
             let hay_title = e.title.to_lowercase();
             let hay_tags: Vec<String> = e.tags.iter().map(|t| t.to_lowercase()).collect();
-            needles.iter().any(|n| {
-                hay_title.contains(n) || hay_tags.iter().any(|t| t.contains(n))
-            })
+            needles
+                .iter()
+                .any(|n| hay_title.contains(n) || hay_tags.iter().any(|t| t.contains(n)))
         })
         .collect()
 }

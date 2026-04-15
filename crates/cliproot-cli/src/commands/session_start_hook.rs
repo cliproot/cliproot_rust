@@ -83,9 +83,7 @@ struct SessionStartInput {
 fn read_stdin_cwd() -> Result<String, Box<dyn std::error::Error>> {
     let mut raw = String::new();
     // Bound the read — stdin is nominally small JSON.  16 KiB is plenty.
-    std::io::stdin()
-        .take(16 * 1024)
-        .read_to_string(&mut raw)?;
+    std::io::stdin().take(16 * 1024).read_to_string(&mut raw)?;
     if raw.trim().is_empty() {
         // No stdin → fall back to CWD env.
         return std::env::current_dir()
@@ -336,9 +334,7 @@ mod tests {
         body.push_str("| concept | uuid | type | tags | last_seen |\n");
         body.push_str("|---|---|---|---|---|\n");
         for i in 0..80 {
-            body.push_str(&format!(
-                "| T{i} | u{i} | concept | | 2026-04-13 |\n"
-            ));
+            body.push_str(&format!("| T{i} | u{i} | concept | | 2026-04-13 |\n"));
         }
         std::fs::write(kd.join("index.md"), body).unwrap();
         let out = read_index_excerpt(&kd, 5_000).unwrap();

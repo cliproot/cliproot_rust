@@ -81,10 +81,7 @@ fn str_to_level(s: &str) -> Result<KnowledgeLevel, Box<dyn std::error::Error>> {
         "digest" => Ok(KnowledgeLevel::Digest),
         "wiki" => Ok(KnowledgeLevel::Wiki),
         "team" => Ok(KnowledgeLevel::Team),
-        _ => Err(format!(
-            "invalid level: {s}  (choose: minimal|curator|digest|wiki|team)"
-        )
-        .into()),
+        _ => Err(format!("invalid level: {s}  (choose: minimal|curator|digest|wiki|team)").into()),
     }
 }
 

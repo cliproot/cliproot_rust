@@ -80,7 +80,7 @@ pub fn write_daily_digest(
         Some(u) if !u.is_empty() => u,
         _ => {
             if file_path.exists() {
-                read_uuid_from_file(&file_path).unwrap_or_else(|| new_uuid())
+                read_uuid_from_file(&file_path).unwrap_or_else(new_uuid)
             } else {
                 new_uuid()
             }
@@ -160,7 +160,7 @@ pub fn write_article(
     canonical_key_override: Option<&str>,
 ) -> Result<ArticleWriteResult, Box<dyn std::error::Error>> {
     let subdir = article_type.subdir().ok_or_else(|| {
-        format!("article type {:?} is not writable via write_article", article_type)
+        format!("article type {article_type:?} is not writable via write_article")
     })?;
     let dir = knowledge_dir.join(subdir);
     fs::create_dir_all(&dir)?;
@@ -173,8 +173,7 @@ pub fn write_article(
 
     // Preserve existing UUID if present; otherwise derive deterministically.
     let uuid = if file_path.exists() {
-        read_uuid_from_file(&file_path)
-            .unwrap_or_else(|| uuidv5_from_canonical_key(&canonical_key))
+        read_uuid_from_file(&file_path).unwrap_or_else(|| uuidv5_from_canonical_key(&canonical_key))
     } else {
         uuidv5_from_canonical_key(&canonical_key)
     };
@@ -329,8 +328,8 @@ mod tests {
     #[test]
     fn writes_frontmatter_and_body() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_daily_digest(dir.path(), "2026-04-13", "## Summary\nDid stuff.", None)
-            .unwrap();
+        let path =
+            write_daily_digest(dir.path(), "2026-04-13", "## Summary\nDid stuff.", None).unwrap();
         assert!(path.exists());
 
         let content = fs::read_to_string(&path).unwrap();
@@ -343,12 +342,10 @@ mod tests {
     #[test]
     fn uuid_stable_across_rewrites() {
         let dir = tempfile::tempdir().unwrap();
-        let path1 =
-            write_daily_digest(dir.path(), "2026-04-13", "first body", None).unwrap();
+        let path1 = write_daily_digest(dir.path(), "2026-04-13", "first body", None).unwrap();
         let uuid1 = read_uuid_from_file(&path1).expect("uuid written");
 
-        let path2 =
-            write_daily_digest(dir.path(), "2026-04-13", "updated body", None).unwrap();
+        let path2 = write_daily_digest(dir.path(), "2026-04-13", "updated body", None).unwrap();
         let uuid2 = read_uuid_from_file(&path2).expect("uuid written");
 
         assert_eq!(path1, path2);
@@ -358,25 +355,24 @@ mod tests {
     #[test]
     fn content_hash_reflects_body() {
         let dir = tempfile::tempdir().unwrap();
-        let path_a =
-            write_daily_digest(dir.path(), "2026-04-13", "body A", None).unwrap();
+        let path_a = write_daily_digest(dir.path(), "2026-04-13", "body A", None).unwrap();
         let hash_a = read_content_hash_from_file(&path_a).unwrap();
 
-        let path_b =
-            write_daily_digest(dir.path(), "2026-04-13", "body B", None).unwrap();
+        let path_b = write_daily_digest(dir.path(), "2026-04-13", "body B", None).unwrap();
         let hash_b = read_content_hash_from_file(&path_b).unwrap();
 
-        assert_ne!(hash_a, hash_b, "different bodies must yield different hashes");
+        assert_ne!(
+            hash_a, hash_b,
+            "different bodies must yield different hashes"
+        );
     }
 
     #[test]
     fn same_body_same_hash() {
         let dir = tempfile::tempdir().unwrap();
-        let path =
-            write_daily_digest(dir.path(), "2026-04-13", "stable body", None).unwrap();
+        let path = write_daily_digest(dir.path(), "2026-04-13", "stable body", None).unwrap();
         let hash1 = read_content_hash_from_file(&path).unwrap();
-        let path =
-            write_daily_digest(dir.path(), "2026-04-13", "stable body", None).unwrap();
+        let path = write_daily_digest(dir.path(), "2026-04-13", "stable body", None).unwrap();
         let hash2 = read_content_hash_from_file(&path).unwrap();
         assert_eq!(hash1, hash2);
     }
@@ -385,13 +381,8 @@ mod tests {
     fn explicit_uuid_respected() {
         let dir = tempfile::tempdir().unwrap();
         let my_uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".to_string();
-        let path = write_daily_digest(
-            dir.path(),
-            "2026-04-13",
-            "body",
-            Some(my_uuid.clone()),
-        )
-        .unwrap();
+        let path =
+            write_daily_digest(dir.path(), "2026-04-13", "body", Some(my_uuid.clone())).unwrap();
         let stored = read_uuid_from_file(&path).unwrap();
         assert_eq!(stored, my_uuid);
     }
@@ -399,7 +390,10 @@ mod tests {
     #[test]
     fn parse_frontmatter_field_basic() {
         let doc = "---\nuuid: abc\ndate: 2026-01-01\n---\nbody";
-        assert_eq!(parse_frontmatter_field(doc, "uuid"), Some("abc".to_string()));
+        assert_eq!(
+            parse_frontmatter_field(doc, "uuid"),
+            Some("abc".to_string())
+        );
         assert_eq!(
             parse_frontmatter_field(doc, "date"),
             Some("2026-01-01".to_string())
@@ -491,11 +485,8 @@ mod tests {
             None,
         )
         .unwrap();
-        let expected = uuid::Uuid::new_v5(
-            &ARTICLE_UUID_NAMESPACE,
-            "pkce-flow".as_bytes(),
-        )
-        .to_string();
+        let expected =
+            uuid::Uuid::new_v5(&ARTICLE_UUID_NAMESPACE, "pkce-flow".as_bytes()).to_string();
         assert_eq!(r.uuid, expected);
     }
 

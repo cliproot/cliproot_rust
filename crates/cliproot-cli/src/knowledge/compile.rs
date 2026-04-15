@@ -91,12 +91,8 @@ const MAX_OUTPUT_TOKENS: u32 = 8_192;
 
 /// Callable matching the signature of [`llm::call`].  Tests substitute a
 /// stub so no real HTTP call is made.
-pub type LlmCallFn = dyn Fn(
-    &str,
-    &str,
-    &str,
-    u32,
-) -> Result<llm::LlmCallResult, Box<dyn std::error::Error>>;
+pub type LlmCallFn =
+    dyn Fn(&str, &str, &str, u32) -> Result<llm::LlmCallResult, Box<dyn std::error::Error>>;
 
 // ── Entry points ──────────────────────────────────────────────────────────────
 
@@ -164,9 +160,7 @@ fn run_compile_inner(
     let daily_path = match latest_daily(&knowledge_dir)? {
         Some(p) => p,
         None => {
-            return Ok(CompileOutcome::Skipped(
-                "no daily corpus yet".to_string(),
-            ));
+            return Ok(CompileOutcome::Skipped("no daily corpus yet".to_string()));
         }
     };
     let daily_body = fs::read_to_string(&daily_path)?;
@@ -181,20 +175,18 @@ fn run_compile_inner(
 
     // 4. Budget pre-check.
     if let Err(e) = llm::check_budget(&flush_state, &cfg, ESTIMATED_TOKENS_PER_COMPILE) {
-        append_log_line(
-            &knowledge_dir,
-            &format!("BUDGET_EXCEEDED {}", e.reason),
-        );
+        append_log_line(&knowledge_dir, &format!("BUDGET_EXCEEDED {}", e.reason));
         return Ok(CompileOutcome::BudgetExceeded(e.reason));
     }
 
     // 5. Load existing index + pick articles to include as context.
     let existing_index = index::read(&knowledge_dir)?.unwrap_or_default();
     let daily_concepts = extract_concept_hints(&daily_body);
-    let selected: Vec<IndexEntry> = index::select_articles_for_compile(&existing_index, &daily_concepts)
-        .into_iter()
-        .cloned()
-        .collect();
+    let selected: Vec<IndexEntry> =
+        index::select_articles_for_compile(&existing_index, &daily_concepts)
+            .into_iter()
+            .cloned()
+            .collect();
     let article_bodies = read_selected_article_bodies(&knowledge_dir, &selected);
 
     // 6. Build + send the prompt.
@@ -256,7 +248,11 @@ fn run_compile_inner(
         // Link citations.
         for clip_hash in section.clip_hashes_from_body() {
             if repo
-                .link_clip_artifact(&clip_hash, &artifact_hash, ClipArtifactRelationship::CitedIn)
+                .link_clip_artifact(
+                    &clip_hash,
+                    &artifact_hash,
+                    ClipArtifactRelationship::CitedIn,
+                )
                 .is_ok()
                 && !all_linked_clip_hashes.contains(&clip_hash)
             {
@@ -272,12 +268,7 @@ fn run_compile_inner(
     index::write(&knowledge_dir, &rebuilt_index)?;
 
     // 10. Record a single Activity for the whole compile run.
-    record_compile_activity(
-        repo,
-        &result,
-        &written,
-        &all_linked_clip_hashes,
-    )?;
+    record_compile_activity(repo, &result, &written, &all_linked_clip_hashes)?;
 
     // 11. Update state + log line.  Recompute the corpus hash _after_ writing
     // so that a subsequent run (which will read the now-present articles) sees
@@ -360,8 +351,10 @@ fn compute_corpus_hash(
                 h.update(content.as_bytes());
                 format!("sha256-raw-{}", hex::encode(h.finalize()))
             });
-            let rel = format!("{subdir}/{}",
-                path.file_name().and_then(|s| s.to_str()).unwrap_or(""));
+            let rel = format!(
+                "{subdir}/{}",
+                path.file_name().and_then(|s| s.to_str()).unwrap_or("")
+            );
             rows.push((rel, ch));
         }
     }
@@ -477,7 +470,10 @@ fn build_user_prompt(
     if !article_bodies.is_empty() {
         user.push_str("Existing article bodies (for reference — update these in place if you touch them):\n\n");
         for (entry, body) in article_bodies {
-            user.push_str(&format!("--- {} ---\n{body}\n\n", entry.relative_path().display()));
+            user.push_str(&format!(
+                "--- {} ---\n{body}\n\n",
+                entry.relative_path().display()
+            ));
         }
     }
 
@@ -488,7 +484,7 @@ fn build_user_prompt(
 
 #[derive(Debug, Clone)]
 struct CompileSection {
-    header: String,     // the `### FILE: ...` line content, sans prefix
+    header: String, // the `### FILE: ...` line content, sans prefix
     title: String,
     #[allow(dead_code)]
     tags: Vec<String>,
@@ -578,10 +574,7 @@ fn parse_file_header(header: &str) -> Option<(ArticleType, String)> {
 /// Walk the three article subdirectories and rebuild `Index` from what is
 /// currently on disk.  Does NOT call the LLM — we trust what write_article
 /// persisted.
-fn rebuild_index(
-    knowledge_dir: &Path,
-    today: &str,
-) -> Result<Index, Box<dyn std::error::Error>> {
+fn rebuild_index(knowledge_dir: &Path, today: &str) -> Result<Index, Box<dyn std::error::Error>> {
     let mut entries: Vec<IndexEntry> = Vec::new();
     for (subdir, kind) in [
         ("concepts", ArticleType::Concept),
@@ -589,7 +582,9 @@ fn rebuild_index(
         ("qa", ArticleType::Qa),
     ] {
         let dir = knowledge_dir.join(subdir);
-        let Ok(items) = fs::read_dir(&dir) else { continue };
+        let Ok(items) = fs::read_dir(&dir) else {
+            continue;
+        };
         for item in items.flatten() {
             let path = item.path();
             if path.extension().and_then(|s| s.to_str()) != Some("md") {
@@ -599,10 +594,9 @@ fn rebuild_index(
                 continue;
             };
             let content = fs::read_to_string(&path).unwrap_or_default();
-            let title = parse_frontmatter_field(&content, "title")
-                .unwrap_or_else(|| stem.to_string());
-            let uuid = parse_frontmatter_field(&content, "uuid")
-                .unwrap_or_default();
+            let title =
+                parse_frontmatter_field(&content, "title").unwrap_or_else(|| stem.to_string());
+            let uuid = parse_frontmatter_field(&content, "uuid").unwrap_or_default();
             let canonical_key = parse_frontmatter_field(&content, "canonicalKey")
                 .unwrap_or_else(|| stem.to_string());
             entries.push(IndexEntry {
@@ -905,10 +899,17 @@ mod tests {
         };
 
         let first = run_compile_with_llm(&cliproot_dir, &repo, CompileTrigger::Manual, &mock);
-        assert!(matches!(first, CompileOutcome::Success { .. }), "first: {first:?}");
+        assert!(
+            matches!(first, CompileOutcome::Success { .. }),
+            "first: {first:?}"
+        );
 
         // Stub that would fail if called — proves second run skips LLM.
-        let mock_fail = |_: &str, _: &str, _: &str, _: u32| -> Result<llm::LlmCallResult, Box<dyn std::error::Error>> {
+        let mock_fail = |_: &str,
+                         _: &str,
+                         _: &str,
+                         _: u32|
+         -> Result<llm::LlmCallResult, Box<dyn std::error::Error>> {
             Err("LLM must not be called on an idempotent second compile".into())
         };
         let second = run_compile_with_llm(&cliproot_dir, &repo, CompileTrigger::Manual, &mock_fail);
@@ -986,30 +987,37 @@ mod tests {
                 text: "### FILE: concepts/pkce-flow.md\n\
                        TITLE: PKCE Flow\nTAGS:\nBODY:\nV1\n"
                     .into(),
-                input_tokens: 1, output_tokens: 1, total_tokens: 2,
+                input_tokens: 1,
+                output_tokens: 1,
+                total_tokens: 2,
                 estimated_cost_usd: 0.0,
                 model: model.to_string(),
                 prompt_hash: "h1".into(),
             })
         };
         let _ = run_compile_with_llm(&cliproot_dir, &repo, CompileTrigger::Manual, &mock_v1);
-        let uuid1 = article::read_uuid_from_file(&knowledge_dir.join("concepts/pkce-flow.md")).unwrap();
+        let uuid1 =
+            article::read_uuid_from_file(&knowledge_dir.join("concepts/pkce-flow.md")).unwrap();
 
         // Modify daily so idempotency key changes, then recompile.
-        article::write_daily_digest(&knowledge_dir, "2026-04-13", "## Day two — changed", None).unwrap();
+        article::write_daily_digest(&knowledge_dir, "2026-04-13", "## Day two — changed", None)
+            .unwrap();
         let mock_v2 = |_: &str, _: &str, model: &str, _: u32| {
             Ok(llm::LlmCallResult {
                 text: "### FILE: concepts/pkce-flow.md\n\
                        TITLE: PKCE Flow\nTAGS:\nBODY:\nV2 updated body\n"
                     .into(),
-                input_tokens: 1, output_tokens: 1, total_tokens: 2,
+                input_tokens: 1,
+                output_tokens: 1,
+                total_tokens: 2,
                 estimated_cost_usd: 0.0,
                 model: model.to_string(),
                 prompt_hash: "h2".into(),
             })
         };
         let _ = run_compile_with_llm(&cliproot_dir, &repo, CompileTrigger::Manual, &mock_v2);
-        let uuid2 = article::read_uuid_from_file(&knowledge_dir.join("concepts/pkce-flow.md")).unwrap();
+        let uuid2 =
+            article::read_uuid_from_file(&knowledge_dir.join("concepts/pkce-flow.md")).unwrap();
 
         assert_eq!(uuid1, uuid2, "UUID must persist across recompiles");
         // Body content changed.
@@ -1031,7 +1039,11 @@ mod tests {
 
         article::write_daily_digest(&knowledge_dir, "2026-04-13", "## Work", None).unwrap();
 
-        let mock_never_called = |_: &str, _: &str, _: &str, _: u32| -> Result<llm::LlmCallResult, Box<dyn std::error::Error>> {
+        let mock_never_called = |_: &str,
+                                 _: &str,
+                                 _: &str,
+                                 _: u32|
+         -> Result<llm::LlmCallResult, Box<dyn std::error::Error>> {
             panic!("budget check should have short-circuited before the LLM call");
         };
         let outcome = run_compile_with_llm(

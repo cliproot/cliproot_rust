@@ -1,5 +1,5 @@
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::commands::background;
 use crate::commands::harness::{parse_stop_input, Harness};
@@ -94,8 +94,8 @@ fn run_background(
 pub(crate) fn run_background_impl(
     cliproot_dir_override: Option<PathBuf>,
 ) -> Result<compile::CompileOutcome, Box<dyn std::error::Error>> {
-    let cliproot_dir = cliproot_dir_override
-        .ok_or("--cliproot-dir is required in --background mode")?;
+    let cliproot_dir =
+        cliproot_dir_override.ok_or("--cliproot-dir is required in --background mode")?;
 
     let project_root = cliproot_dir
         .parent()
@@ -119,7 +119,7 @@ pub(crate) fn run_background_impl(
 
 // ── Detached spawn ────────────────────────────────────────────────────────────
 
-fn spawn_background(cliproot_dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+fn spawn_background(cliproot_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let cliproot_dir_str = cliproot_dir
         .to_str()
         .ok_or("cliproot dir path is not valid UTF-8")?;
@@ -202,8 +202,7 @@ mod tests {
         assert!(
             matches!(
                 compile_outcome,
-                compile::CompileOutcome::Success { .. }
-                    | compile::CompileOutcome::Skipped(_)
+                compile::CompileOutcome::Success { .. } | compile::CompileOutcome::Skipped(_)
             ),
             "compile chain should succeed or skip gracefully: {compile_outcome:?}"
         );

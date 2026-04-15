@@ -26,7 +26,9 @@ const PROTOCOL_VERSION: &str = "0.0.3";
 
 // ── Knowledge configuration ───────────────────────────────────────────────────
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize, Default)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize, Default,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum KnowledgeLevel {
     Minimal,
