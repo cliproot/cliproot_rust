@@ -26,6 +26,24 @@ pub struct FlushState {
 
     /// SHA-256 hex of the last written daily digest body (for idempotency).
     pub last_daily_hash: Option<String>,
+
+    /// SHA-256 hex fingerprint of the knowledge corpus (sorted article paths +
+    /// content hashes, plus today's daily hash) at the end of the most recent
+    /// successful compile run.  Phase D — gates `cliproot compile` so repeated
+    /// runs against an unchanged corpus are no-ops.
+    #[serde(default)]
+    pub last_compile_hash: Option<String>,
+}
+
+impl FlushState {
+    /// Returns true if the compile idempotency key has changed since the last
+    /// successful compile.  Always true when no compile has ever run.
+    pub fn needs_compile(&self, current_corpus_hash: &str) -> bool {
+        match &self.last_compile_hash {
+            Some(prev) => prev != current_corpus_hash,
+            None => true,
+        }
+    }
 }
 
 // ── I/O helpers ───────────────────────────────────────────────────────────────
@@ -247,5 +265,41 @@ mod tests {
         let log_dir = dir.path().join("no-such-dir");
         let state = FlushState::default();
         assert_eq!(total_new_lines(&state, &log_dir).unwrap(), 0);
+    }
+
+    #[test]
+    fn needs_compile_true_when_never_run() {
+        let state = FlushState::default();
+        assert!(state.needs_compile("any-hash"));
+    }
+
+    #[test]
+    fn needs_compile_true_on_hash_change() {
+        let state = FlushState {
+            last_compile_hash: Some("old".to_string()),
+            ..Default::default()
+        };
+        assert!(state.needs_compile("new"));
+    }
+
+    #[test]
+    fn needs_compile_false_on_match() {
+        let state = FlushState {
+            last_compile_hash: Some("same".to_string()),
+            ..Default::default()
+        };
+        assert!(!state.needs_compile("same"));
+    }
+
+    #[test]
+    fn last_compile_hash_roundtrips() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = FlushState {
+            last_compile_hash: Some("abc123".to_string()),
+            ..Default::default()
+        };
+        save(&state, dir.path()).unwrap();
+        let loaded = load(dir.path()).unwrap();
+        assert_eq!(loaded.last_compile_hash.as_deref(), Some("abc123"));
     }
 }

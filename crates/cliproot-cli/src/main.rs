@@ -91,6 +91,33 @@ enum Commands {
         cliproot_dir: Option<std::path::PathBuf>,
     },
 
+    /// Handle Claude Code SessionStart hook events: inject a wiki snapshot as additionalContext
+    #[command(name = "session-start-hook")]
+    SessionStartHook {
+        /// AI harness (claude-code only — other harnesses exit clean)
+        #[arg(long, value_enum, default_value = "claude-code")]
+        harness: commands::harness::Harness,
+
+        /// Path to .cliproot/ directory (testing override)
+        #[arg(long, hide = true)]
+        cliproot_dir: Option<std::path::PathBuf>,
+    },
+
+    /// Compile today's daily digest into concept/connection/qa wiki articles
+    Compile {
+        /// Path to .cliproot/ directory (default: walk up from cwd)
+        #[arg(long)]
+        cliproot_dir: Option<std::path::PathBuf>,
+
+        /// Run compile in a detached background process
+        #[arg(long)]
+        background: bool,
+
+        /// Internal: we are the detached child — do the work synchronously
+        #[arg(long, hide = true)]
+        background_child: bool,
+    },
+
     /// Reconstruct a design record from a Claude Code session
     Record {
         /// Claude Code session ID (default: most recent)
@@ -586,6 +613,18 @@ fn main() {
             background,
             cliproot_dir,
         } => commands::flush_hook::run(harness, background, cliproot_dir),
+        Commands::SessionStartHook {
+            harness,
+            cliproot_dir,
+        } => {
+            commands::session_start_hook::run(harness, cliproot_dir);
+            Ok(())
+        }
+        Commands::Compile {
+            cliproot_dir,
+            background,
+            background_child,
+        } => commands::compile::run(cliproot_dir, background, background_child),
         Commands::Record {
             session,
             session_dir,

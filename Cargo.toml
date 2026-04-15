@@ -23,7 +23,7 @@ thiserror = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 clap = { version = ">=4.5, <4.5.40", features = ["derive"] }
 colored = "2"
-uuid = { version = ">=1, <1.16", features = ["v4"] }
+uuid = { version = ">=1, <1.16", features = ["v4", "v5"] }
 unicode-normalization = "0.1"
 tempfile = ">=3, <3.19"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }

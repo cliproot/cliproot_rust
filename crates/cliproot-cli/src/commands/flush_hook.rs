@@ -1,9 +1,9 @@
 use std::io::Read;
 use std::path::PathBuf;
-use std::process::Stdio;
 
+use crate::commands::background;
 use crate::commands::harness::{parse_stop_input, Harness};
-use crate::knowledge::flush;
+use crate::knowledge::{compile, flush};
 
 /// Discover the `.cliproot/` directory by walking up from `cwd`.
 fn discover_cliproot_dir(cwd: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
@@ -85,6 +85,15 @@ fn run_foreground(harness: Harness) -> Result<(), Box<dyn std::error::Error>> {
 fn run_background(
     cliproot_dir_override: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    run_background_impl(cliproot_dir_override)?;
+    Ok(())
+}
+
+/// In-process implementation of the background flush + optional compile chain.
+/// Pub(crate) so the integration test can call it directly without a subprocess.
+pub(crate) fn run_background_impl(
+    cliproot_dir_override: Option<PathBuf>,
+) -> Result<compile::CompileOutcome, Box<dyn std::error::Error>> {
     let cliproot_dir = cliproot_dir_override
         .ok_or("--cliproot-dir is required in --background mode")?;
 
@@ -96,60 +105,33 @@ fn run_background(
 
     let outcome = flush::run_flush(&cliproot_dir, &repo);
 
-    // Log the outcome regardless of success or failure.
     eprintln!("cliproot flush-hook [background]: {outcome}");
 
-    // Exit 0 for all outcomes — budget exceeded, skipped, etc. are all OK.
-    Ok(())
+    let compile_outcome = if matches!(outcome, flush::FlushOutcome::Success { .. }) {
+        compile::run_compile(&cliproot_dir, &repo, compile::CompileTrigger::PostFlush)
+    } else {
+        compile::CompileOutcome::Skipped(format!("flush: {outcome}"))
+    };
+    eprintln!("cliproot flush-hook [background] → compile: {compile_outcome}");
+
+    Ok(compile_outcome)
 }
 
 // ── Detached spawn ────────────────────────────────────────────────────────────
 
 fn spawn_background(cliproot_dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    let exe = std::env::current_exe()
-        .map_err(|e| format!("cannot locate cliproot executable: {e}"))?;
-
     let cliproot_dir_str = cliproot_dir
         .to_str()
         .ok_or("cliproot dir path is not valid UTF-8")?;
-
-    let mut cmd = std::process::Command::new(&exe);
-    cmd.args([
-        "flush-hook",
-        "--background",
-        "--cliproot-dir",
-        cliproot_dir_str,
-    ])
-    .env("CLAUDE_INVOKED_BY", "cliproot-flush-hook")
-    .stdin(Stdio::null())
-    .stdout(Stdio::null())
-    .stderr(Stdio::null());
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        // SAFETY: setsid() is async-signal-safe. The child simply creates a
-        // new session so it outlives the parent (Claude Code) process.
-        unsafe {
-            cmd.pre_exec(|| {
-                libc::setsid();
-                Ok(())
-            });
-        }
-    }
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        const DETACHED_PROCESS: u32 = 0x0000_0008;
-        cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS);
-    }
-
-    cmd.spawn()
-        .map_err(|e| format!("failed to spawn background flush process: {e}"))?;
-
-    Ok(())
+    background::spawn(
+        &[
+            "flush-hook",
+            "--background",
+            "--cliproot-dir",
+            cliproot_dir_str,
+        ],
+        "cliproot-flush-hook",
+    )
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -185,5 +167,45 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let result = discover_cliproot_dir(dir.path().to_str().unwrap());
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn postflush_compile_chains_in_same_process() {
+        // Tests the in-process compile chain via run_background_impl.
+        // We set compile_after_hour very late so PostFlush always fires.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = cliproot_store::Repository::init(dir.path()).unwrap();
+        let mut cfg = repo.knowledge_config().unwrap();
+        cfg.level = cliproot_store::KnowledgeLevel::Wiki;
+        cfg.compile_after_hour = 23; // Always fires
+        repo.set_knowledge_config(cfg).unwrap();
+
+        let cliproot_dir = dir.path().join(".cliproot");
+        let knowledge_dir = cliproot_dir.join("knowledge");
+        std::fs::create_dir_all(&knowledge_dir).unwrap();
+
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        crate::knowledge::article::write_daily_digest(
+            &knowledge_dir,
+            &today,
+            "## Summary\nWorked on things.\n",
+            None,
+        )
+        .unwrap();
+
+        // Pre-set the budget to something so flush won't fail.
+        let mut state = crate::knowledge::state::load(&knowledge_dir).unwrap();
+        state.daily_total_tokens = 0;
+        crate::knowledge::state::save(&state, &knowledge_dir).unwrap();
+
+        let compile_outcome = run_background_impl(Some(cliproot_dir)).unwrap();
+        assert!(
+            matches!(
+                compile_outcome,
+                compile::CompileOutcome::Success { .. }
+                    | compile::CompileOutcome::Skipped(_)
+            ),
+            "compile chain should succeed or skip gracefully: {compile_outcome:?}"
+        );
     }
 }

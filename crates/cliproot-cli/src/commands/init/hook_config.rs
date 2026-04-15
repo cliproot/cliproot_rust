@@ -136,6 +136,12 @@ fn install_claude_hooks(root: &Path) -> Result<ConfigAction, Box<dyn std::error:
         "PreCompact",
         "cliproot consolidate-hook --emergency",
     )?;
+    // SessionStart: Claude Code only — Cursor/Codex silently skip it (P-D9).
+    any_added |= install_hook_entry(
+        hooks_obj,
+        "SessionStart",
+        "cliproot session-start-hook --harness claude-code",
+    )?;
 
     if !any_added {
         return Ok(ConfigAction::Skipped(path));
@@ -318,6 +324,34 @@ mod tests {
             precompact_hook["command"],
             "cliproot consolidate-hook --emergency"
         );
+
+        let session_start_hook = &content["hooks"]["SessionStart"][0]["hooks"][0];
+        assert_eq!(
+            session_start_hook["command"],
+            "cliproot session-start-hook --harness claude-code"
+        );
+    }
+
+    #[test]
+    fn cursor_hooks_omit_session_start() {
+        let dir = tempfile::tempdir().unwrap();
+        let cursor_dir = dir.path().join(".cursor");
+        fs::create_dir_all(&cursor_dir).unwrap();
+        fs::write(
+            cursor_dir.join("mcp.json"),
+            r#"{"mcpServers": {"cliproot": {"command": "cliproot", "args": ["mcp"]}}}"#,
+        )
+        .unwrap();
+
+        install_hooks_for(dir.path(), HarnessSelection::CursorOnly).unwrap();
+
+        let content: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(dir.path().join(".cursor/hooks.json")).unwrap(),
+        )
+        .unwrap();
+        // Cursor hook schema uses lowercase keys; SessionStart is Claude-only.
+        assert!(content["hooks"].get("SessionStart").is_none());
+        assert!(content["hooks"].get("sessionStart").is_none());
     }
 
     #[test]
@@ -355,7 +389,7 @@ mod tests {
         fs::create_dir_all(&claude_dir).unwrap();
         fs::write(
             claude_dir.join("settings.json"),
-            r#"{"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":"cliproot capture-hook"}]}],"Stop":[{"hooks":[{"type":"command","command":"cliproot consolidate-hook"}]},{"hooks":[{"type":"command","command":"cliproot flush-hook"}]}],"PreCompact":[{"hooks":[{"type":"command","command":"cliproot consolidate-hook --emergency"}]}]}}"#,
+            r#"{"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":"cliproot capture-hook"}]}],"Stop":[{"hooks":[{"type":"command","command":"cliproot consolidate-hook"}]},{"hooks":[{"type":"command","command":"cliproot flush-hook"}]}],"PreCompact":[{"hooks":[{"type":"command","command":"cliproot consolidate-hook --emergency"}]}],"SessionStart":[{"hooks":[{"type":"command","command":"cliproot session-start-hook --harness claude-code"}]}]}}"#,
         )
         .unwrap();
 

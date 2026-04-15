@@ -42,6 +42,20 @@ impl KnowledgeLevel {
     pub fn allows_flush(&self) -> bool {
         matches!(self, Self::Digest | Self::Wiki | Self::Team)
     }
+
+    /// Returns true when this level allows the compile step to run.
+    /// Compile materialises the wiki (concepts/connections/qa + index.md)
+    /// and is gated to the `wiki` tier and above.
+    pub fn allows_compile(&self) -> bool {
+        matches!(self, Self::Wiki | Self::Team)
+    }
+
+    /// Returns true when the session-start hook is allowed to inject context.
+    /// Registration is unconditional (see part 5 decision D11); gating happens
+    /// inside the binary so the plugin hook can stay static.
+    pub fn allows_session_start(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -69,7 +83,7 @@ impl Default for KnowledgeModelsConfig {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct KnowledgeConfig {
     pub level: KnowledgeLevel,
@@ -78,6 +92,16 @@ pub struct KnowledgeConfig {
     pub max_bg_tokens_per_day: u64,
     #[serde(default = "default_max_bg_cost")]
     pub max_bg_cost_per_day_usd: f64,
+    /// Character cap on the text the SessionStart hook may inject into a
+    /// Claude Code session's context. Enforced inside
+    /// `cliproot session-start-hook` (Phase D).
+    #[serde(default = "default_session_start_inject_budget_chars")]
+    pub session_start_inject_budget_chars: usize,
+    /// Local-hour threshold (0–23) gating the post-flush auto-compile chain.
+    /// PostFlush compile no-ops before this hour; manual `cliproot compile`
+    /// ignores the gate.
+    #[serde(default = "default_compile_after_hour")]
+    pub compile_after_hour: u8,
 }
 
 fn default_max_bg_tokens() -> u64 {
@@ -86,12 +110,33 @@ fn default_max_bg_tokens() -> u64 {
 fn default_max_bg_cost() -> f64 {
     0.50
 }
+fn default_session_start_inject_budget_chars() -> usize {
+    5000
+}
+fn default_compile_after_hour() -> u8 {
+    18
+}
+
+impl Default for KnowledgeConfig {
+    fn default() -> Self {
+        Self {
+            level: KnowledgeLevel::default(),
+            models: KnowledgeModelsConfig::default(),
+            max_bg_tokens_per_day: default_max_bg_tokens(),
+            max_bg_cost_per_day_usd: default_max_bg_cost(),
+            session_start_inject_budget_chars: default_session_start_inject_budget_chars(),
+            compile_after_hour: default_compile_after_hour(),
+        }
+    }
+}
 
 fn is_knowledge_default(k: &KnowledgeConfig) -> bool {
     k.level == KnowledgeLevel::Curator
         && k.models == KnowledgeModelsConfig::default()
-        && k.max_bg_tokens_per_day == 100_000
-        && k.max_bg_cost_per_day_usd == 0.50
+        && k.max_bg_tokens_per_day == default_max_bg_tokens()
+        && k.max_bg_cost_per_day_usd == default_max_bg_cost()
+        && k.session_start_inject_budget_chars == default_session_start_inject_budget_chars()
+        && k.compile_after_hour == default_compile_after_hour()
 }
 
 // ── Remote configuration ──────────────────────────────────────────────────────
