@@ -846,6 +846,21 @@ impl IndexDb {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
+    pub fn find_sources_by_uri(&self, uri: &str) -> Result<Vec<SourceRow>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, source_type, title, source_uri FROM sources WHERE source_uri = ?1",
+        )?;
+        let rows = stmt.query_map(params![uri], |row| {
+            Ok(SourceRow {
+                id: row.get(0)?,
+                source_type: row.get(1)?,
+                title: row.get(2)?,
+                source_uri: row.get(3)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
     pub fn get_source_by_id(&self, source_id: &str) -> Result<Option<SourceRow>, StoreError> {
         let mut stmt = self
             .conn

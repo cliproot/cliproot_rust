@@ -1,4 +1,5 @@
 mod commands;
+mod knowledge;
 mod output;
 mod skills;
 mod transcript;
@@ -41,7 +42,81 @@ enum Commands {
 
     /// Capture a PostToolUse hook event (reads JSON from stdin)
     #[command(name = "capture-hook")]
-    CaptureHook,
+    CaptureHook {
+        /// AI harness (claude-code, cursor, codex)
+        #[arg(long, value_enum, default_value = "claude-code")]
+        harness: commands::harness::Harness,
+    },
+
+    /// Surface unclipped sources from agent-log for review
+    Consolidate {
+        /// Session ID to consolidate
+        #[arg(long)]
+        session: String,
+
+        /// Process ALL unconsolidated entries and write candidate artifact
+        #[arg(long)]
+        emergency: bool,
+
+        /// Advance watermark after consolidation
+        #[arg(long)]
+        commit: bool,
+    },
+
+    /// Handle Stop/PreCompact hook events for consolidation (reads JSON from stdin)
+    #[command(name = "consolidate-hook")]
+    ConsolidateHook {
+        /// AI harness (claude-code, cursor, codex)
+        #[arg(long, value_enum, default_value = "claude-code")]
+        harness: commands::harness::Harness,
+
+        /// Emergency mode for PreCompact hooks
+        #[arg(long)]
+        emergency: bool,
+    },
+
+    /// Handle Stop hook events: spawn a detached background flush process (reads JSON from stdin)
+    #[command(name = "flush-hook")]
+    FlushHook {
+        /// AI harness (claude-code, cursor, codex)
+        #[arg(long, value_enum, default_value = "claude-code")]
+        harness: commands::harness::Harness,
+
+        /// Internal flag: run flush in the foreground (used by the spawned child)
+        #[arg(long, hide = true)]
+        background: bool,
+
+        /// Path to .cliproot/ directory (required when --background is set)
+        #[arg(long, hide = true)]
+        cliproot_dir: Option<std::path::PathBuf>,
+    },
+
+    /// Handle Claude Code SessionStart hook events: inject a wiki snapshot as additionalContext
+    #[command(name = "session-start-hook")]
+    SessionStartHook {
+        /// AI harness (claude-code only — other harnesses exit clean)
+        #[arg(long, value_enum, default_value = "claude-code")]
+        harness: commands::harness::Harness,
+
+        /// Path to .cliproot/ directory (testing override)
+        #[arg(long, hide = true)]
+        cliproot_dir: Option<std::path::PathBuf>,
+    },
+
+    /// Compile today's daily digest into concept/connection/qa wiki articles
+    Compile {
+        /// Path to .cliproot/ directory (default: walk up from cwd)
+        #[arg(long)]
+        cliproot_dir: Option<std::path::PathBuf>,
+
+        /// Run compile in a detached background process
+        #[arg(long)]
+        background: bool,
+
+        /// Internal: we are the detached child — do the work synchronously
+        #[arg(long, hide = true)]
+        background_child: bool,
+    },
 
     /// Reconstruct a design record from a Claude Code session
     Record {
@@ -350,6 +425,28 @@ enum Commands {
         #[command(subcommand)]
         command: SessionCommands,
     },
+
+    /// Read or write a repository config key (e.g. knowledge.level)
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConfigAction {
+    /// Print the current value of a config key
+    Get {
+        /// Config key (e.g. knowledge.level)
+        key: String,
+    },
+    /// Set a config key to a new value
+    Set {
+        /// Config key (e.g. knowledge.level)
+        key: String,
+        /// New value
+        value: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -501,8 +598,33 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Init { agent, hooks } => commands::init::run(agent, hooks),
-        Commands::CaptureHook => commands::capture_hook::run(),
+        Commands::Init { agent, hooks } => commands::init::run(agent, hooks, None),
+        Commands::CaptureHook { harness } => commands::capture_hook::run(harness),
+        Commands::Consolidate {
+            session,
+            emergency,
+            commit,
+        } => commands::consolidate::run(&session, emergency, commit, &cli.format),
+        Commands::ConsolidateHook { harness, emergency } => {
+            commands::consolidate_hook::run(harness, emergency)
+        }
+        Commands::FlushHook {
+            harness,
+            background,
+            cliproot_dir,
+        } => commands::flush_hook::run(harness, background, cliproot_dir),
+        Commands::SessionStartHook {
+            harness,
+            cliproot_dir,
+        } => {
+            commands::session_start_hook::run(harness, cliproot_dir);
+            Ok(())
+        }
+        Commands::Compile {
+            cliproot_dir,
+            background,
+            background_child,
+        } => commands::compile::run(cliproot_dir, background, background_child),
         Commands::Record {
             session,
             session_dir,
@@ -725,6 +847,10 @@ fn main() {
                 &cli.format,
             ),
             SessionCommands::End { session_id } => commands::session::end(&session_id, &cli.format),
+        },
+        Commands::Config { action } => match action {
+            ConfigAction::Get { key } => commands::config::get(&key),
+            ConfigAction::Set { key, value } => commands::config::set(&key, &value),
         },
     };
 

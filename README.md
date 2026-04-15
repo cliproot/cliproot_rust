@@ -22,12 +22,15 @@ cliproot_rust/
 ├── .github/workflows/
 │   ├── ci.yml              # fmt + clippy + test on push/PR
 │   └── release.yml         # multi-platform binary release on tag
-├── skills/
-│   └── cliproot-research/  # Agent Skills package (embedded into binary)
-│       ├── SKILL.md        # core research workflow (agentskills.io format)
-│       ├── references/     # tool API docs + workflow examples
-│       ├── scripts/        # verify-provenance.sh helper
-│       └── agents/         # openai.yaml for Codex
+├── skills/                 # Agent Skills source of truth (embedded into binary)
+│   ├── cliproot-capture/   # lightweight capture workflow
+│   │   ├── SKILL.md        # agentskills.io format
+│   │   └── agents/         # openai.yaml for Codex
+│   └── cliproot-session/   # full-ceremony session workflow
+│       ├── SKILL.md
+│       ├── agents/
+│       └── references/     # tool API docs + workflow examples
+├── justfile                # developer tasks (e.g. `just sync-skills`)
 ├── crates/
 │   ├── cliproot-core/      # protocol model, hashing, verification
 │   ├── cliproot-store/     # hybrid storage: files + SQLite index
@@ -41,6 +44,17 @@ cliproot_rust/
 **Dependency graph**: `cli → { mcp, registry } → store → core`
 
 ## Install
+
+### Claude Code plugin (recommended for Claude Code users)
+
+Install from the Claude Code marketplace to get the MCP server, agent skills, slash commands, and hooks in one step:
+
+```bash
+claude plugin marketplace add cliproot/cliproot-rust
+claude plugin install cliproot@cliproot-rust --scope user
+```
+
+No manual MCP configuration needed — the plugin wires everything up automatically.
 
 ### From source (Rust)
 
@@ -149,7 +163,12 @@ The standalone `cliproot-mcp` binary is also still available for backward compat
 
 ### Agent Skills
 
-Cliproot ships a ready-made **[Agent Skills](https://agentskills.io)** package that teaches AI agents how to use the MCP tools effectively for provenance-tracked research. The skill is compatible with Claude Code, Cursor, VS Code/Copilot, OpenAI Codex, Windsurf, Gemini CLI, and any other Agent Skills-compliant tool.
+Cliproot ships two **[Agent Skills](https://agentskills.io)** packages that teach AI agents how to use the MCP tools effectively for provenance-tracked research. Both skills are compatible with Claude Code, Cursor, VS Code/Copilot, OpenAI Codex, Windsurf, Gemini CLI, and any other Agent Skills-compliant tool.
+
+| Skill | Description |
+|-------|-------------|
+| **`cliproot-capture`** | Lightweight provenance capture — clip sources and derive syntheses during research. Low ceremony, suitable for any session. |
+| **`cliproot-session`** | Full-ceremony session tracking — scoped projects, activity management, and validated session artifacts. Use for extended or shared research. |
 
 Generate all platform configs in one command:
 
@@ -161,15 +180,15 @@ This creates:
 
 | Platform | Files generated |
 |----------|----------------|
-| **Claude Code** | `.mcp.json`, `.claude/skills/cliproot-research/` |
-| **Cursor** | `.cursor/mcp.json`, `.cursor/rules/cliproot-research.mdc` |
+| **Claude Code** | `.mcp.json`, `.claude/skills/cliproot-capture/`, `.claude/skills/cliproot-session/` |
+| **Cursor** | `.cursor/mcp.json`, `.cursor/rules/cliproot-capture.mdc`, `.cursor/rules/cliproot-session.mdc` |
 | **VS Code / Copilot** | `.vscode/mcp.json` |
-| **Universal (Codex, Gemini CLI, etc.)** | `.agents/skills/cliproot-research/` |
-| **Windsurf** | `.windsurf/rules/cliproot-research.md` |
+| **Universal (Codex, Gemini CLI, etc.)** | `.agents/skills/cliproot-capture/`, `.agents/skills/cliproot-session/` |
+| **Windsurf** | `.windsurf/rules/cliproot-capture.md`, `.windsurf/rules/cliproot-session.md` |
 
-The skill teaches agents to follow a **PROJECT → SESSION → ACTIVITY → CAPTURE → SYNTHESIZE → VALIDATE → OUTPUT** workflow so prompts, generated clips, artifacts, and restorable session context stay linked.
+`cliproot-capture` teaches a **SCOPE → CAPTURE → SYNTHESIZE → CITE** workflow. `cliproot-session` adds **PROJECT → SESSION → ACTIVITY** lifecycle management around it.
 
-Skill source files live in [`skills/cliproot-research/`](skills/cliproot-research/) and are embedded in the binary at build time.
+Skill source files live in [`skills/`](skills/) and are embedded in the binary at build time.
 
 ---
 
@@ -533,6 +552,27 @@ cliproot help <command>
 
 Clips are content-addressed: the same text from the same source always produces the same `clipHash`, regardless of when or where it was created.
 
+## Contributing to Skills
+
+Skill content lives in `skills/` and is the single source of truth — the binary embeds files from there via `include_str!()`, and the `.claude-plugin/` packaging copies are generated from the same source.
+
+**After editing any `skills/*/SKILL.md`**, no manual sync is needed — `.claude-plugin/skills/` symlinks directly into `skills/`. If you add a new skill, run:
+
+```bash
+just sync-skills
+```
+
+This creates (or refreshes) the symlinks in `.claude-plugin/skills/`. CI enforces that symlinks resolve — a PR with a broken symlink will fail the `skill-symlinks` check.
+
+`just` is a command runner ([install](https://github.com/casey/just#installation): `cargo install just`, `brew install just`, or `mise use just`). The `justfile` at the repo root lists all available recipes; `just --list` shows them.
+
+**To add a new skill:**
+1. Create `skills/<skill-name>/SKILL.md` (and `agents/openai.yaml` if supporting Codex)
+2. Add `include_str!()` constants to `crates/cliproot-cli/src/skills.rs`
+3. Wire the new constants into `crates/cliproot-cli/src/commands/init/agent_config.rs`
+4. Create the `.claude-plugin/skills/<skill-name>/` directory and run `just sync-skills`
+5. Update the CI `skill-sync` job in `.github/workflows/ci.yml` to diff-check the new file
+
 ## CI/CD
 
 GitHub Actions run automatically:
@@ -541,6 +581,9 @@ GitHub Actions run automatically:
   - `cargo fmt --all -- --check`
   - `cargo clippy --workspace -- -D warnings`
   - `cargo test --workspace`
+  - Skill symlinks resolve (`skill-symlinks` job)
+  - Plugin structure valid JSON + executable install script (`plugin-verify` job)
+  - Plugin hook composition test (`plugin-hook-composition` job)
 
 - **Release** (`release.yml`) — on tag push matching `v*` (e.g. `v0.1.0`):
   - Builds release binaries for Linux, macOS (x86 + ARM), and Windows

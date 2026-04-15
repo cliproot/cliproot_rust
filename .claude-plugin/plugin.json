@@ -1,0 +1,26 @@
+{
+  "name": "cliproot",
+  "version": "0.5.0",
+  "description": "Provenance tracking for AI-assisted research and multi-agent workflows",
+  "author": {
+    "name": "Jason Whitwill",
+    "url": "https://github.com/cliproot"
+  },
+  "license": "MIT",
+  "keywords": ["provenance", "citations", "research", "audit", "multi-agent", "clipping"],
+  "userConfig": {
+    "level": {
+      "title": "Knowledge Automation Level",
+      "description": "Knowledge automation level. Leave at 'curator' for Phase A — 'digest'/'wiki' activate in later versions.",
+      "default": "curator"
+    },
+    "anthropic_api_key": {
+      "title": "Anthropic API Key",
+      "description": "Optional. If set, overrides ANTHROPIC_API_KEY for flush/compile calls. Defaults to credentials from Claude Code login.",
+      "default": ""
+    }
+  },
+  "hooksDirectory": "hooks",
+  "skillsDirectory": "skills",
+  "commandsDirectory": "commands"
+}

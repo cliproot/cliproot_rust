@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cliproot": {
+      "command": "cliproot",
+      "args": ["mcp"]
+    }
+  }
+}

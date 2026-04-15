@@ -1,0 +1,19 @@
+{
+  "name": "cliproot",
+  "owner": {
+    "name": "cliproot",
+    "url": "https://github.com/cliproot"
+  },
+  "plugins": [
+    {
+      "name": "cliproot-rust",
+      "source": "./.claude-plugin",
+      "description": "Provenance tracking for AI-assisted research and multi-agent workflows. Capture sources, record derivations, and maintain audit trails across agent handoffs.",
+      "version": "1.0.0",
+      "author": {
+        "name": "cliproot",
+        "url": "https://github.com/cliproot"
+      }
+    }
+  ]
+}
