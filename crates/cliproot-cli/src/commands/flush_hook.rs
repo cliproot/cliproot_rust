@@ -102,10 +102,13 @@ pub(crate) fn run_background_impl(
         .ok_or("cannot determine project root from --cliproot-dir")?;
 
     let repo = cliproot_store::Repository::open(project_root)?;
+    let knowledge_dir = cliproot_dir.join("knowledge");
 
     let outcome = flush::run_flush(&cliproot_dir, &repo);
-
     eprintln!("cliproot flush-hook [background]: {outcome}");
+    // The detached child's stderr is /dev/null, so persist non-success outcomes
+    // (errors, skipped, budget-exceeded not already logged internally) to log.md.
+    log_background_outcome_if_unlogged(&knowledge_dir, "flush", &outcome);
 
     let compile_outcome = if matches!(outcome, flush::FlushOutcome::Success { .. }) {
         compile::run_compile(&cliproot_dir, &repo, compile::CompileTrigger::PostFlush)
@@ -113,8 +116,35 @@ pub(crate) fn run_background_impl(
         compile::CompileOutcome::Skipped(format!("flush: {outcome}"))
     };
     eprintln!("cliproot flush-hook [background] → compile: {compile_outcome}");
+    log_background_compile_outcome_if_unlogged(&knowledge_dir, &compile_outcome);
 
     Ok(compile_outcome)
+}
+
+fn log_background_outcome_if_unlogged(
+    knowledge_dir: &Path,
+    stage: &str,
+    outcome: &flush::FlushOutcome,
+) {
+    // Success and BudgetExceeded are already written to log.md inside run_flush.
+    // Error and Skipped are not — surface them so silent failures become visible.
+    match outcome {
+        flush::FlushOutcome::Error(_) | flush::FlushOutcome::Skipped(_) => {
+            flush::append_log_line(knowledge_dir, &format!("[background] {stage}: {outcome}"));
+        }
+        flush::FlushOutcome::Success { .. } | flush::FlushOutcome::BudgetExceeded(_) => {}
+    }
+}
+
+fn log_background_compile_outcome_if_unlogged(
+    knowledge_dir: &Path,
+    outcome: &compile::CompileOutcome,
+) {
+    // compile::run_compile already logs Success, Skipped (most paths), and
+    // BudgetExceeded to log.md. Error never is — surface it here.
+    if matches!(outcome, compile::CompileOutcome::Error(_)) {
+        flush::append_log_line(knowledge_dir, &format!("[background] compile: {outcome}"));
+    }
 }
 
 // ── Detached spawn ────────────────────────────────────────────────────────────
@@ -167,6 +197,56 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let result = discover_cliproot_dir(dir.path().to_str().unwrap());
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn background_flush_error_written_to_log_md() {
+        let dir = tempfile::tempdir().unwrap();
+        let knowledge_dir = dir.path().join("knowledge");
+
+        log_background_outcome_if_unlogged(
+            &knowledge_dir,
+            "flush",
+            &flush::FlushOutcome::Error("no api key".to_string()),
+        );
+
+        let log = std::fs::read_to_string(knowledge_dir.join("log.md")).unwrap();
+        assert!(log.contains("[background] flush: ERROR"));
+        assert!(log.contains("no api key"));
+    }
+
+    #[test]
+    fn background_compile_error_written_to_log_md() {
+        let dir = tempfile::tempdir().unwrap();
+        let knowledge_dir = dir.path().join("knowledge");
+
+        log_background_compile_outcome_if_unlogged(
+            &knowledge_dir,
+            &compile::CompileOutcome::Error("boom".to_string()),
+        );
+
+        let log = std::fs::read_to_string(knowledge_dir.join("log.md")).unwrap();
+        assert!(log.contains("[background] compile: ERROR"));
+        assert!(log.contains("boom"));
+    }
+
+    #[test]
+    fn background_success_does_not_double_log() {
+        // run_flush already logs Success internally; outer helper must not add a
+        // duplicate entry.
+        let dir = tempfile::tempdir().unwrap();
+        let knowledge_dir = dir.path().join("knowledge");
+
+        log_background_outcome_if_unlogged(
+            &knowledge_dir,
+            "flush",
+            &flush::FlushOutcome::Success {
+                digest_path: "x".into(),
+                tokens_used: 0,
+            },
+        );
+
+        assert!(!knowledge_dir.join("log.md").exists());
     }
 
     #[test]

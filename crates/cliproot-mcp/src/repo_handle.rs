@@ -179,11 +179,31 @@ pub struct RepoHandle {
 }
 
 impl RepoHandle {
-    /// Spawn a dedicated OS thread that owns `repo` and processes commands.
-    pub fn spawn(repo: Repository) -> Self {
+    /// Spawn a dedicated OS thread that owns the `Repository` and processes commands.
+    ///
+    /// Accepts a `Result` so the MCP server can start even when no repository is
+    /// available — every command will reply with the stored error message until
+    /// the server is restarted against a valid repo.
+    pub fn spawn(repo: Result<Repository, StoreError>) -> Self {
         let (tx, mut rx) = mpsc::channel::<RepoCmd>(32);
         std::thread::spawn(move || {
+            let (repo_opt, err_msg) = match repo {
+                Ok(r) => (Some(r), None),
+                Err(e) => (None, Some(e.to_string())),
+            };
             while let Some(cmd) = rx.blocking_recv() {
+                let repo = match &repo_opt {
+                    Some(r) => r,
+                    None => {
+                        reply_unavailable(
+                            cmd,
+                            err_msg
+                                .as_deref()
+                                .unwrap_or("no cliproot repository configured"),
+                        );
+                        continue;
+                    }
+                };
                 match cmd {
                     RepoCmd::StoreBundle { bundle, tx } => {
                         let _ = tx.send(repo.store_bundle(&bundle));
@@ -748,5 +768,49 @@ impl RepoHandle {
             rx,
         )
         .await
+    }
+}
+
+/// Reply to every command variant with an `Other` error carrying `err_msg`.
+/// Used when the actor thread could not open a repository: each pending tool
+/// call gets a clean error back instead of the handshake hanging on a dead
+/// channel.
+fn reply_unavailable(cmd: RepoCmd, err_msg: &str) {
+    macro_rules! respond {
+        ($tx:ident) => {{
+            let _ = $tx.send(Err(StoreError::Other(err_msg.to_string())));
+        }};
+    }
+    match cmd {
+        RepoCmd::StoreBundle { tx, .. } => respond!(tx),
+        RepoCmd::GetClip { tx, .. } => respond!(tx),
+        RepoCmd::GetClipFull { tx, .. } => respond!(tx),
+        RepoCmd::ResolveHash { tx, .. } => respond!(tx),
+        RepoCmd::ListClips { tx, .. } => respond!(tx),
+        RepoCmd::Trace { tx, .. } => respond!(tx),
+        RepoCmd::VerifyClip { tx, .. } => respond!(tx),
+        RepoCmd::VerifyAll { tx } => respond!(tx),
+        RepoCmd::ExportBundle { tx, .. } => respond!(tx),
+        RepoCmd::Annotate { tx, .. } => respond!(tx),
+        RepoCmd::Cite { tx, .. } => respond!(tx),
+        RepoCmd::Doctor { tx, .. } => respond!(tx),
+        RepoCmd::CreateProject { tx, .. } => respond!(tx),
+        RepoCmd::ListProjects { tx } => respond!(tx),
+        RepoCmd::UseProject { tx, .. } => respond!(tx),
+        RepoCmd::DeleteProject { tx, .. } => respond!(tx),
+        RepoCmd::AddArtifact { tx, .. } => respond!(tx),
+        RepoCmd::ListArtifacts { tx, .. } => respond!(tx),
+        RepoCmd::GetArtifact { tx, .. } => respond!(tx),
+        RepoCmd::GetArtifactBytes { tx, .. } => respond!(tx),
+        RepoCmd::LinkClipArtifact { tx, .. } => respond!(tx),
+        RepoCmd::CreatePack { tx, .. } => respond!(tx),
+        RepoCmd::ImportPack { tx, .. } => respond!(tx),
+        RepoCmd::InspectPack { tx, .. } => respond!(tx),
+        RepoCmd::VerifyPack { tx, .. } => respond!(tx),
+        RepoCmd::StartActivity { tx, .. } => respond!(tx),
+        RepoCmd::EndActivity { tx, .. } => respond!(tx),
+        RepoCmd::StartSession { tx, .. } => respond!(tx),
+        RepoCmd::EndSession { tx, .. } => respond!(tx),
+        RepoCmd::RecordClipTracking { tx, .. } => respond!(tx),
     }
 }

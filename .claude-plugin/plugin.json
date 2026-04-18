@@ -1,6 +1,6 @@
 {
   "name": "cliproot",
-  "version": "0.5.1",
+  "version": "0.5.3",
   "description": "Provenance tracking for AI-assisted research and multi-agent workflows",
   "author": {
     "name": "Jason Whitwill",
@@ -12,12 +12,14 @@
     "level": {
       "title": "Knowledge Automation Level",
       "description": "Knowledge automation level. Leave at 'curator' for Phase A — 'digest'/'wiki' activate in later versions.",
-      "default": "curator"
+      "default": "curator",
+      "type": "string"
     },
     "anthropic_api_key": {
-      "title": "Anthropic API Key",
-      "description": "Optional. If set, overrides ANTHROPIC_API_KEY for flush/compile calls. Defaults to credentials from Claude Code login.",
-      "default": ""
+      "title": "Anthropic API Key (optional)",
+      "description": "Optional. Sets ANTHROPIC_API_KEY for background flush/compile calls. If blank, cliproot looks for CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`), then $CLAUDE_CONFIG_DIR/.credentials.json, then ~/.claude/.credentials.json. On macOS run `claude setup-token` — Keychain-stored login credentials are not readable from hook subprocesses.",
+      "default": "",
+      "type": "string"
     }
   },
   "hooks": "./hooks/hooks.json",

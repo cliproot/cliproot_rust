@@ -1,0 +1,7 @@
+{
+  "setup": [
+    "cargo build"
+  ],
+  "teardown": [],
+  "run": []
+}

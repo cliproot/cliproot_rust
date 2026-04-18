@@ -2,8 +2,7 @@
   "mcpServers": {
     "cliproot": {
       "command": "cliproot",
-      "args": ["mcp"],
-      "env": { "CLIPROOT_REPO": "${CLAUDE_PROJECT_DIR}" }
+      "args": ["mcp"]
     }
   }
 }

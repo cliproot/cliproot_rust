@@ -11,5 +11,8 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "cliproot@cliproot_marketplace": true
   }
 }
