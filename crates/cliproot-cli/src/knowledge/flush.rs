@@ -345,8 +345,10 @@ fn build_user_prompt(date: &str, lines: &[String]) -> String {
 }
 
 // ── Log file helper ───────────────────────────────────────────────────────────
+// (Public to the crate: `flush_hook::run_background_impl` uses this to surface
+// errors from the detached Stop-hook child, whose stderr is /dev/null.)
 
-fn append_log_line(knowledge_dir: &Path, message: &str) {
+pub(crate) fn append_log_line(knowledge_dir: &Path, message: &str) {
     let log_path = knowledge_dir.join("log.md");
     let timestamp = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     let line = format!("- `{timestamp}` {message}\n");

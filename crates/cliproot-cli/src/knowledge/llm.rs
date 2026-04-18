@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -115,9 +115,11 @@ pub fn check_budget(
 
 /// Call the Anthropic Messages API with the given system + user prompt.
 ///
-/// Credentials are resolved in order:
+/// Credentials are resolved in order (see [`resolve_api_key`] for details):
 /// 1. `ANTHROPIC_API_KEY` environment variable.
-/// 2. `~/.claude/.credentials.json` (tries `claudeAiOauthAccessToken` then `apiKey`).
+/// 2. `CLAUDE_CODE_OAUTH_TOKEN` environment variable (from `claude setup-token`).
+/// 3. `$CLAUDE_CONFIG_DIR/.credentials.json`.
+/// 4. `~/.claude/.credentials.json`.
 pub fn call(
     system: &str,
     user: &str,
@@ -186,31 +188,77 @@ pub fn call(
 
 // ── Credential resolution ─────────────────────────────────────────────────────
 
+/// Resolve an Anthropic API key or Claude Code OAuth token from the environment.
+///
+/// Resolution order:
+/// 1. `ANTHROPIC_API_KEY` — raw Console API key.
+/// 2. `CLAUDE_CODE_OAUTH_TOKEN` — OAuth token produced by `claude setup-token`.
+///    Recommended for subprocesses/hooks on macOS, where Keychain-stored login
+///    credentials are not accessible.
+/// 3. `$CLAUDE_CONFIG_DIR/.credentials.json` — documented alternate location.
+/// 4. `~/.claude/.credentials.json` — Linux/Windows default for Claude Code.
+///
+/// JSON credentials files are parsed in two shapes: the current nested shape
+/// (`{"claudeAiOauth": {"accessToken": "…"}}`) and legacy flat shapes
+/// (`claudeAiOauthAccessToken`, `apiKey`).
 fn resolve_api_key() -> Result<String, Box<dyn std::error::Error>> {
-    // 1. Env var
+    // 1. ANTHROPIC_API_KEY
     if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
         if !key.is_empty() {
             return Ok(key);
         }
     }
 
-    // 2. ~/.claude/.credentials.json
-    if let Some(key) = read_claude_credentials() {
-        return Ok(key);
+    // 2. CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`)
+    if let Ok(token) = std::env::var("CLAUDE_CODE_OAUTH_TOKEN") {
+        if !token.is_empty() {
+            return Ok(token);
+        }
+    }
+
+    // 3. $CLAUDE_CONFIG_DIR/.credentials.json
+    if let Ok(dir) = std::env::var("CLAUDE_CONFIG_DIR") {
+        if !dir.is_empty() {
+            let path = PathBuf::from(dir).join(".credentials.json");
+            if let Some(key) = read_credentials_file(&path) {
+                return Ok(key);
+            }
+        }
+    }
+
+    // 4. ~/.claude/.credentials.json
+    if let Some(home) = home_dir() {
+        let path = home.join(".claude").join(".credentials.json");
+        if let Some(key) = read_credentials_file(&path) {
+            return Ok(key);
+        }
     }
 
     Err("No Anthropic API key found.\n\
-         Set ANTHROPIC_API_KEY environment variable, or sign in to Claude Code \
-         (which stores credentials in ~/.claude/.credentials.json)."
+         Options (in order of preference):\n  \
+         • Run `claude setup-token` to generate a token that uses your Claude Code subscription.\n  \
+         • Set ANTHROPIC_API_KEY from https://console.anthropic.com/settings/keys.\n  \
+         On macOS, OAuth credentials Claude Code stores in Keychain are not readable from \
+         hook subprocesses — `claude setup-token` is the supported way to expose them."
         .into())
 }
 
-fn read_claude_credentials() -> Option<String> {
-    let home = home_dir()?;
-    let path = home.join(".claude").join(".credentials.json");
-    let json: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path).ok()?).ok()?;
+fn read_credentials_file(path: &Path) -> Option<String> {
+    let content = fs::read_to_string(path).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
 
-    // Try OAuth token first, then explicit apiKey
+    // Nested shape written by Claude Code: {"claudeAiOauth": {"accessToken": "…"}}
+    if let Some(val) = json
+        .get("claudeAiOauth")
+        .and_then(|v| v.get("accessToken"))
+        .and_then(|v| v.as_str())
+    {
+        if !val.is_empty() {
+            return Some(val.to_string());
+        }
+    }
+
+    // Legacy / alternate flat keys
     for key in ["claudeAiOauthAccessToken", "apiKey"] {
         if let Some(val) = json.get(key).and_then(|v| v.as_str()) {
             if !val.is_empty() {
@@ -218,6 +266,7 @@ fn read_claude_credentials() -> Option<String> {
             }
         }
     }
+
     None
 }
 
@@ -241,6 +290,11 @@ fn sha256_base64url(data: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // Tests that mutate ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN must not
+    // run in parallel, since cargo test shares one process env across threads.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn make_state(tokens: u64, cost: f64) -> FlushState {
         let mut s = FlushState::default();
@@ -282,6 +336,7 @@ mod tests {
 
     #[test]
     fn credential_env_var_used() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("ANTHROPIC_API_KEY", "test-key-123");
         let key = resolve_api_key().unwrap();
         assert_eq!(key, "test-key-123");
@@ -290,6 +345,7 @@ mod tests {
 
     #[test]
     fn credential_env_var_priority_over_file() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("ANTHROPIC_API_KEY", "env-key");
         // Even if credentials file exists, env takes priority
         let key = resolve_api_key().unwrap();
@@ -298,8 +354,72 @@ mod tests {
     }
 
     #[test]
-    fn no_credential_errors() {
+    fn credential_oauth_token_env_var_used_when_api_key_missing() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var("ANTHROPIC_API_KEY");
+        std::env::set_var("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-from-setup-token");
+        let key = resolve_api_key().unwrap();
+        assert_eq!(key, "sk-ant-oat01-from-setup-token");
+        std::env::remove_var("CLAUDE_CODE_OAUTH_TOKEN");
+    }
+
+    #[test]
+    fn credential_api_key_beats_oauth_token() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var("ANTHROPIC_API_KEY", "api-key-wins");
+        std::env::set_var("CLAUDE_CODE_OAUTH_TOKEN", "oauth-loses");
+        let key = resolve_api_key().unwrap();
+        assert_eq!(key, "api-key-wins");
+        std::env::remove_var("ANTHROPIC_API_KEY");
+        std::env::remove_var("CLAUDE_CODE_OAUTH_TOKEN");
+    }
+
+    #[test]
+    fn credential_file_parses_nested_oauth_shape() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".credentials.json");
+        fs::write(
+            &path,
+            r#"{"claudeAiOauth":{"accessToken":"sk-ant-oat01-abc","refreshToken":"x"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            read_credentials_file(&path).as_deref(),
+            Some("sk-ant-oat01-abc")
+        );
+    }
+
+    #[test]
+    fn credential_file_parses_legacy_flat_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".credentials.json");
+        fs::write(&path, r#"{"apiKey":"sk-ant-api03-legacy"}"#).unwrap();
+        assert_eq!(
+            read_credentials_file(&path).as_deref(),
+            Some("sk-ant-api03-legacy")
+        );
+    }
+
+    #[test]
+    fn credential_file_returns_none_for_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("does-not-exist.json");
+        assert!(read_credentials_file(&path).is_none());
+    }
+
+    #[test]
+    fn credential_file_returns_none_for_empty_oauth_token() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".credentials.json");
+        fs::write(&path, r#"{"claudeAiOauth":{"accessToken":""}}"#).unwrap();
+        assert!(read_credentials_file(&path).is_none());
+    }
+
+    #[test]
+    fn no_credential_errors() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var("ANTHROPIC_API_KEY");
+        std::env::remove_var("CLAUDE_CODE_OAUTH_TOKEN");
         // We can't guarantee ~/.claude/.credentials.json doesn't exist on CI,
         // but we can at least verify the function returns a Result (not panic).
         let _ = resolve_api_key(); // Ok or Err — both are acceptable
