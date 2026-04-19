@@ -291,3 +291,38 @@ pub struct ConsolidateParams {
     #[serde(default)]
     pub commit: bool,
 }
+
+// ── cliproot_wiki_lint ─────────────────────────────────────────────────────
+
+/// Parameters for the cliproot_wiki_lint tool.
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
+pub struct WikiLintParams {
+    /// Skip the doctor-backed coverage pass (check #8)
+    #[serde(default)]
+    pub structural_only: bool,
+    /// Run the LLM-backed pairwise contradictions pass (check #9)
+    #[serde(default)]
+    pub contradictions: bool,
+    /// Persist a timestamped report under `knowledge/reports/`
+    #[serde(default)]
+    pub write_report: bool,
+}
+
+// ── cliproot_query ─────────────────────────────────────────────────────────
+
+/// Parameters for the cliproot_query tool.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct QueryParams {
+    /// Natural-language question to answer from the compiled wiki
+    pub prompt: String,
+    /// Persist the answer as a `qa/<slug>.md` article
+    #[serde(default)]
+    pub file_back: bool,
+    /// Upper bound on articles fed to the answer phase (default: 6)
+    #[serde(default = "default_query_top_k")]
+    pub top_k: usize,
+}
+
+fn default_query_top_k() -> usize {
+    6
+}

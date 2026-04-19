@@ -140,7 +140,12 @@ pub fn call(
         }],
     };
 
-    let client = reqwest::blocking::Client::new();
+    // Anthropic compile/query responses can take >30s when generating up to
+    // MAX_OUTPUT_TOKENS. reqwest::blocking's default timeout is 30s, so set a
+    // generous ceiling to avoid spurious "operation timed out" errors.
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()?;
     let response = client
         .post("https://api.anthropic.com/v1/messages")
         .header("x-api-key", &api_key)

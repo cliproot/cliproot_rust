@@ -2,17 +2,14 @@
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Write|Edit",
         "hooks": [
           {
-            "type": "command",
-            "command": "cargo fmt --all"
+            "command": "cargo fmt --all",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": "Write|Edit"
       }
     ]
-  },
-  "enabledPlugins": {
-    "cliproot@cliproot_marketplace": true
   }
 }

@@ -913,6 +913,81 @@ impl ClipRootService {
             .map_err(|e| ErrorData::internal_error(format!("invalid JSON output: {e}"), None))?;
         ok_json(&parsed)
     }
+
+    /// Run the wiki-lint checks.
+    #[tool(
+        description = "Run structural and provenance lint checks over the compiled wiki at .cliproot/knowledge/. Returns the per-check finding list. Check #2 (broken [cliproot:sha256-…] citations) is the load-bearing invariant."
+    )]
+    async fn cliproot_wiki_lint(
+        &self,
+        Parameters(params): Parameters<WikiLintParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let mut cmd = std::process::Command::new("cliproot");
+        cmd.arg("wiki-lint").arg("--format").arg("json");
+        if params.structural_only {
+            cmd.arg("--structural-only");
+        }
+        if params.contradictions {
+            cmd.arg("--contradictions");
+        }
+        if params.write_report {
+            cmd.arg("--report");
+        }
+        let output = tokio::task::spawn_blocking(move || cmd.output())
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?
+            .map_err(|e| ErrorData::internal_error(format!("failed to run cliproot: {e}"), None))?;
+        // wiki-lint exits 1 on broken citations; we still surface the JSON body.
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let parsed: serde_json::Value = serde_json::from_str(&stdout).map_err(|e| {
+            ErrorData::internal_error(
+                format!(
+                    "invalid JSON output from wiki-lint: {e}\nstderr: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                ),
+                None,
+            )
+        })?;
+        ok_json(&parsed)
+    }
+
+    /// Answer a question from the compiled wiki.
+    #[tool(
+        description = "Answer a natural-language question using the compiled wiki. Two-phase retrieval: keyword extraction + answer synthesis with [cliproot:sha256-…] citations. Records a Research Activity."
+    )]
+    async fn cliproot_query(
+        &self,
+        Parameters(params): Parameters<QueryParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if params.prompt.trim().is_empty() {
+            return Err(ErrorData::invalid_params("prompt is required", None));
+        }
+        let mut cmd = std::process::Command::new("cliproot");
+        cmd.arg("query")
+            .arg(&params.prompt)
+            .arg("--format")
+            .arg("json")
+            .arg("--top-k")
+            .arg(params.top_k.to_string());
+        if params.file_back {
+            cmd.arg("--file-back");
+        }
+        let output = tokio::task::spawn_blocking(move || cmd.output())
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?
+            .map_err(|e| ErrorData::internal_error(format!("failed to run cliproot: {e}"), None))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(ErrorData::internal_error(
+                format!("query failed: {stderr}"),
+                None,
+            ));
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let parsed: serde_json::Value = serde_json::from_str(&stdout)
+            .map_err(|e| ErrorData::internal_error(format!("invalid JSON output: {e}"), None))?;
+        ok_json(&parsed)
+    }
 }
 
 // ── ServerHandler ──────────────────────────────────────────────────────────

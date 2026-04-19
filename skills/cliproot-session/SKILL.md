@@ -60,6 +60,7 @@ Periodically and before any output:
 
 ### 7. EXPLORE — Understand Prior Work
 Before starting new research or when checking whether a claim is already grounded:
+- Use `cliproot_query` to ask the compiled wiki directly — returns a cited answer drawing from prior concept/connection/qa articles
 - Use `cliproot_search` or `cliproot_list` to find existing clips
 - Use `cliproot_inspect` for full clip details
 - Use `cliproot_trace` to understand derivation lineage
@@ -108,6 +109,8 @@ See [references/tool-reference.md](references/tool-reference.md) for detailed AP
 | `cliproot_annotate` | Add inline citations | document_text, style |
 | `cliproot_cite` | Generate bibliography | document_text |
 | `cliproot_doctor` | Audit provenance coverage | document_text |
+| `cliproot_wiki_lint` | Lint the compiled wiki | structural_only, contradictions |
+| `cliproot_query` | Ask the wiki a question | prompt, file_back, top_k |
 | `cliproot_artifact_add` | Store a markdown/json/text artifact | path or content, artifact_type |
 | `cliproot_artifact_link` | Attach an artifact to a clip | clip_hash_or_id, artifact_hash |
 | `cliproot_pack_create` | Create a portable pack | project_id or roots, output_path |

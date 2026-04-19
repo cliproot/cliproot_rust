@@ -18,7 +18,8 @@ metadata:
 ## Workflow
 
 1. **Scope**: `cliproot_project_use` to set the active project (create with `cliproot_project_create` if needed).
-2. **Capture**: When encountering a source worth citing, `cliproot_clip` the relevant passage. Set `source_type` appropriately.
+2. **Check prior work**: Before starting research, call `cliproot_query` to see if the topic has been covered before — reuse beats rediscovery.
+3. **Capture**: When encountering a source worth citing, `cliproot_clip` the relevant passage. Set `source_type` appropriately.
 3. **Synthesize**: When combining or summarizing clips, `cliproot_derive` with parent clip IDs and accurate `transformation_type`.
 4. **Cite**: Use `cliproot_annotate` for inline citations and `cliproot_cite` for bibliography in final output.
 

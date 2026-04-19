@@ -118,6 +118,49 @@ enum Commands {
         background_child: bool,
     },
 
+    /// Lint the compiled wiki for structural and provenance invariants
+    #[command(name = "wiki-lint")]
+    WikiLint {
+        /// Path to .cliproot/ directory (default: walk up from cwd)
+        #[arg(long)]
+        cliproot_dir: Option<std::path::PathBuf>,
+
+        /// Skip the coverage pass (check #8) — run only file-structural checks 1–7
+        #[arg(long)]
+        structural_only: bool,
+
+        /// Also run check #9 (pairwise contradiction detection, LLM, ~5k tokens)
+        #[arg(long)]
+        contradictions: bool,
+
+        /// Treat any failing check as an error (exit 1).  Without it, only
+        /// broken `[cliproot:sha256-...]` citations fail the run.
+        #[arg(long)]
+        strict: bool,
+
+        /// Write a timestamped report to `<knowledge_dir>/reports/wiki-lint-YYYY-MM-DD.md`
+        #[arg(long)]
+        report: bool,
+    },
+
+    /// Two-phase retrieval over the compiled wiki
+    Query {
+        /// The natural-language question to answer
+        prompt: String,
+
+        /// Path to .cliproot/ directory (default: walk up from cwd)
+        #[arg(long)]
+        cliproot_dir: Option<std::path::PathBuf>,
+
+        /// Persist the answer as `qa/<slug>.md` in the knowledge tree
+        #[arg(long)]
+        file_back: bool,
+
+        /// Upper bound on articles fed to the answer phase
+        #[arg(long, default_value = "6")]
+        top_k: usize,
+    },
+
     /// Reconstruct a design record from a Claude Code session
     Record {
         /// Claude Code session ID (default: most recent)
@@ -625,6 +668,26 @@ fn main() {
             background,
             background_child,
         } => commands::compile::run(cliproot_dir, background, background_child),
+        Commands::WikiLint {
+            cliproot_dir,
+            structural_only,
+            contradictions,
+            strict,
+            report,
+        } => commands::wiki_lint::run(
+            cliproot_dir,
+            structural_only,
+            contradictions,
+            strict,
+            report,
+            &cli.format,
+        ),
+        Commands::Query {
+            prompt,
+            cliproot_dir,
+            file_back,
+            top_k,
+        } => commands::query::run(&prompt, cliproot_dir, file_back, top_k, &cli.format),
         Commands::Record {
             session,
             session_dir,

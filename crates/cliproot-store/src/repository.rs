@@ -67,13 +67,23 @@ pub struct KnowledgeModelsConfig {
     pub flush: String,
     #[serde(default = "default_compile_model")]
     pub compile: String,
+    #[serde(default = "default_lint_model")]
+    pub lint: String,
+    #[serde(default = "default_query_model")]
+    pub query: String,
 }
 
 fn default_flush_model() -> String {
     "claude-haiku-4-5-20251001".to_string()
 }
 fn default_compile_model() -> String {
-    "claude-sonnet-4-6".to_string()
+    "claude-haiku-4-5-20251001".to_string()
+}
+fn default_lint_model() -> String {
+    "claude-haiku-4-5-20251001".to_string()
+}
+fn default_query_model() -> String {
+    "claude-haiku-4-5-20251001".to_string()
 }
 
 impl Default for KnowledgeModelsConfig {
@@ -81,6 +91,8 @@ impl Default for KnowledgeModelsConfig {
         Self {
             flush: default_flush_model(),
             compile: default_compile_model(),
+            lint: default_lint_model(),
+            query: default_query_model(),
         }
     }
 }

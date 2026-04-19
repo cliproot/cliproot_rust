@@ -147,8 +147,9 @@ fn render(index: &Index) -> String {
     out.push_str("|---|---|---|---|---|\n");
     for e in &index.entries {
         out.push_str(&format!(
-            "| {title} | {uuid} | {kind} | {tags} | {last_seen} |\n",
-            title = escape_cell(&e.title),
+            "| [{title}]({target}) | {uuid} | {kind} | {tags} | {last_seen} |\n",
+            title = escape_link_text(&e.title),
+            target = relative_link_target(e),
             uuid = e.uuid,
             kind = e.article_type.as_slug(),
             tags = escape_cell(&e.tags.join(", ")),
@@ -161,6 +162,18 @@ fn render(index: &Index) -> String {
 fn escape_cell(s: &str) -> String {
     // Pipe characters inside cells break markdown tables; escape them.
     s.replace('|', "\\|").replace('\n', " ")
+}
+
+fn relative_link_target(e: &IndexEntry) -> String {
+    // Forward-slash path so the link works on all platforms regardless of
+    // PathBuf's native separator.  Slugs are [a-z0-9-] so no URL encoding.
+    let subdir = e.article_type.subdir().unwrap_or(".");
+    format!("{subdir}/{slug}.md", slug = e.canonical_key)
+}
+
+fn escape_link_text(s: &str) -> String {
+    // Escape brackets so titles like "Array[T]" don't confuse the link parser.
+    escape_cell(s).replace('[', "\\[").replace(']', "\\]")
 }
 
 // ── parsing ───────────────────────────────────────────────────────────────────
@@ -232,7 +245,7 @@ fn parse_row(line: &str) -> Option<IndexEntry> {
     if cells.len() < 5 {
         return None;
     }
-    let title = cells[0].clone();
+    let (title, link_target) = parse_markdown_link(&cells[0]);
     let uuid = cells[1].clone();
     let kind = parse_article_type(&cells[2])?;
     let tags: Vec<String> = cells[3]
@@ -242,7 +255,18 @@ fn parse_row(line: &str) -> Option<IndexEntry> {
         .collect();
     let last_seen = cells[4].clone();
 
-    let canonical_key = super::article::canonical_key_from_title(&title);
+    // Prefer the link target's filename stem — it is the canonical identity
+    // on disk.  Fall back to title-derived slug for legacy indexes that
+    // predate the linked-title format.
+    let canonical_key = link_target
+        .as_deref()
+        .and_then(|t| {
+            std::path::Path::new(t)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .map(String::from)
+        })
+        .unwrap_or_else(|| super::article::canonical_key_from_title(&title));
 
     Some(IndexEntry {
         uuid,
@@ -252,6 +276,26 @@ fn parse_row(line: &str) -> Option<IndexEntry> {
         tags,
         last_seen,
     })
+}
+
+fn parse_markdown_link(cell: &str) -> (String, Option<String>) {
+    // Accept `[text](target)` and return `(text, Some(target))`; otherwise
+    // return `(cell, None)` so legacy plain-title indexes still parse after
+    // upgrade.
+    let trimmed = cell.trim();
+    if let Some(rest) = trimmed.strip_prefix('[') {
+        if let Some(close) = rest.find("](") {
+            let text = &rest[..close];
+            let after = &rest[close + 2..];
+            if let Some(target) = after.strip_suffix(')') {
+                return (
+                    text.replace("\\]", "]").replace("\\[", "["),
+                    Some(target.to_string()),
+                );
+            }
+        }
+    }
+    (cell.to_string(), None)
 }
 
 fn parse_article_type(s: &str) -> Option<ArticleType> {
@@ -381,7 +425,90 @@ mod tests {
         assert!(out.contains("# Wiki index"));
         assert!(out.contains("| concept | uuid | type | tags | last_seen |"));
         assert!(out.contains("|---|---|---|---|---|"));
-        assert!(out.contains("| PKCE Flow |"));
+        assert!(out.contains("| [PKCE Flow](concepts/pkce-flow.md) |"));
+    }
+
+    #[test]
+    fn rendered_row_links_use_subdir_by_type() {
+        let idx = Index {
+            schema_version: 1,
+            generated_at: "now".into(),
+            entries: vec![
+                IndexEntry {
+                    uuid: "u1".into(),
+                    canonical_key: "pkce-flow".into(),
+                    title: "PKCE Flow".into(),
+                    article_type: ArticleType::Concept,
+                    tags: vec![],
+                    last_seen: "2026-04-13".into(),
+                },
+                IndexEntry {
+                    uuid: "u2".into(),
+                    canonical_key: "oauth-vs-oidc".into(),
+                    title: "OAuth vs OIDC".into(),
+                    article_type: ArticleType::Connection,
+                    tags: vec![],
+                    last_seen: "2026-04-13".into(),
+                },
+                IndexEntry {
+                    uuid: "u3".into(),
+                    canonical_key: "rate-limit-fix".into(),
+                    title: "How do I fix rate limits?".into(),
+                    article_type: ArticleType::Qa,
+                    tags: vec![],
+                    last_seen: "2026-04-13".into(),
+                },
+            ],
+        };
+        let out = render(&idx);
+        assert!(out.contains("[PKCE Flow](concepts/pkce-flow.md)"));
+        assert!(out.contains("[OAuth vs OIDC](connections/oauth-vs-oidc.md)"));
+        assert!(out.contains("[How do I fix rate limits?](qa/rate-limit-fix.md)"));
+    }
+
+    #[test]
+    fn parse_extracts_title_from_markdown_link() {
+        let out = render(&sample_index());
+        let back = parse(&out).unwrap();
+        assert_eq!(back.entries[0].title, "PKCE Flow");
+        assert_eq!(back.entries[0].canonical_key, "pkce-flow");
+        assert_eq!(back.entries[1].title, "OAuth vs OIDC");
+        assert_eq!(back.entries[1].canonical_key, "oauth-vs-oidc");
+    }
+
+    #[test]
+    fn parse_accepts_legacy_plain_title() {
+        let raw = "---\nschemaVersion: 1\ngeneratedAt: now\n---\n\n\
+            | concept | uuid | type | tags | last_seen |\n\
+            |---|---|---|---|---|\n\
+            | PKCE Flow | u1 | concept | | 2026-04-13 |\n";
+        let idx = parse(raw).unwrap();
+        assert_eq!(idx.entries.len(), 1);
+        assert_eq!(idx.entries[0].title, "PKCE Flow");
+        assert_eq!(idx.entries[0].canonical_key, "pkce-flow");
+    }
+
+    #[test]
+    fn render_escapes_closing_bracket_in_title() {
+        let idx = Index {
+            schema_version: 1,
+            generated_at: "now".into(),
+            entries: vec![IndexEntry {
+                uuid: "u".into(),
+                canonical_key: "array-t".into(),
+                title: "Array[T]".into(),
+                article_type: ArticleType::Concept,
+                tags: vec![],
+                last_seen: "2026-04-13".into(),
+            }],
+        };
+        let out = render(&idx);
+        assert!(
+            out.contains("[Array\\[T\\]](concepts/array-t.md)"),
+            "closing bracket in title must be escaped so the link doesn't close early; got:\n{out}"
+        );
+        let back = parse(&out).unwrap();
+        assert_eq!(back.entries[0].title, "Array[T]");
     }
 
     #[test]
