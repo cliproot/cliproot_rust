@@ -119,14 +119,15 @@ pub fn run_lint(
     let articles = collect_articles(&knowledge_dir)?;
     let idx = index::read(&knowledge_dir)?.unwrap_or_default();
 
-    let mut checks = Vec::new();
-    checks.push(check_wikilinks(&articles, &idx));
-    checks.push(check_citations(&articles, repo)?);
-    checks.push(check_orphan_pages(&articles));
-    checks.push(check_orphan_sources(&knowledge_dir)?);
-    checks.push(check_stale_articles(&articles));
-    checks.push(check_sparse_articles(&articles));
-    checks.push(check_missing_backlinks(&articles));
+    let mut checks = vec![
+        check_wikilinks(&articles, &idx),
+        check_citations(&articles, repo)?,
+        check_orphan_pages(&articles),
+        check_orphan_sources(&knowledge_dir)?,
+        check_stale_articles(&articles),
+        check_sparse_articles(&articles),
+        check_missing_backlinks(&articles),
+    ];
 
     if !opts.structural_only {
         checks.push(check_uncovered_claims(&articles, repo));
@@ -734,7 +735,7 @@ mod tests {
         let raw = fs::read_to_string(&res.path).unwrap();
         let (fm_end, _) = raw
             .match_indices("\n---\n")
-            .nth(0)
+            .next()
             .map(|(i, _)| (i + 5, ()))
             .unwrap();
         let mut tampered = raw[..fm_end].to_string();

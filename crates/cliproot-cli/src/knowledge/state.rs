@@ -149,9 +149,11 @@ mod tests {
     #[test]
     fn roundtrip_state() {
         let dir = tempfile::tempdir().unwrap();
-        let mut state = FlushState::default();
-        state.daily_total_tokens = 12_345;
-        state.daily_total_cost_usd = 0.12;
+        let mut state = FlushState {
+            daily_total_tokens: 12_345,
+            daily_total_cost_usd: 0.12,
+            ..Default::default()
+        };
         state
             .last_flushed_line_counts
             .insert("abc123".to_string(), 50);

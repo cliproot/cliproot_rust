@@ -455,7 +455,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(content["version"], 1);
-        assert!(content["hooks"]["postToolUse"].as_array().unwrap().len() >= 1);
+        assert!(!content["hooks"]["postToolUse"]
+            .as_array()
+            .unwrap()
+            .is_empty());
 
         // Check for cliproot hook capture command
         let post_tool_use = content["hooks"]["postToolUse"].as_array().unwrap();

@@ -374,7 +374,7 @@ mod tests {
         // Inflate entries to trigger the selection path.
         for i in 0..60 {
             idx.entries.push(IndexEntry {
-                uuid: format!("00000000-0000-0000-0000-{:012x}", i),
+                uuid: format!("00000000-0000-0000-0000-{i:012x}"),
                 canonical_key: format!("filler-{i}"),
                 title: format!("Filler {i}"),
                 article_type: ArticleType::Concept,
@@ -393,7 +393,7 @@ mod tests {
         let mut idx = sample_index();
         for i in 0..60 {
             idx.entries.push(IndexEntry {
-                uuid: format!("00000000-0000-0000-0000-{:012x}", i),
+                uuid: format!("00000000-0000-0000-0000-{i:012x}"),
                 canonical_key: format!("filler-{i}"),
                 title: format!("Filler {i}"),
                 article_type: ArticleType::Concept,

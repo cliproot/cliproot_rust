@@ -288,7 +288,7 @@ fn parse_keywords(raw: &str) -> Vec<String> {
     // Fallback: split on commas/newlines so a malformed response still gives
     // the deterministic selector something to work with.
     trimmed
-        .split(|c: char| c == ',' || c == '\n')
+        .split([',', '\n'])
         .map(|s| {
             s.trim()
                 .trim_matches(|c: char| !c.is_alphanumeric())
