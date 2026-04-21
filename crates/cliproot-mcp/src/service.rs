@@ -887,9 +887,9 @@ impl ClipRootService {
         if session_id.is_empty() {
             return Err(ErrorData::invalid_params("session_id is required", None));
         }
-        // Shell out to `cliproot consolidate` to avoid circular crate dependency
+        // Shell out to `cliproot session consolidate` to avoid circular crate dependency
         let mut cmd = std::process::Command::new("cliproot");
-        cmd.arg("consolidate")
+        cmd.arg("session").arg("consolidate")
             .arg("--session")
             .arg(&session_id)
             .arg("--format")
@@ -923,7 +923,7 @@ impl ClipRootService {
         Parameters(params): Parameters<WikiLintParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let mut cmd = std::process::Command::new("cliproot");
-        cmd.arg("wiki-lint").arg("--format").arg("json");
+        cmd.arg("wiki").arg("lint").arg("--format").arg("json");
         if params.structural_only {
             cmd.arg("--structural-only");
         }
@@ -963,7 +963,7 @@ impl ClipRootService {
             return Err(ErrorData::invalid_params("prompt is required", None));
         }
         let mut cmd = std::process::Command::new("cliproot");
-        cmd.arg("query")
+        cmd.arg("wiki").arg("query")
             .arg(&params.prompt)
             .arg("--format")
             .arg("json")

@@ -1,4 +1,4 @@
-//! `cliproot wiki-lint` — Karpathy's 7 structural checks unified with
+//! `cliproot wiki lint` — Karpathy's 7 structural checks unified with
 //! cliproot's provenance invariants.
 //!
 //! Phase F.  Runs a set of checks over `.cliproot/knowledge/` and reports
@@ -13,7 +13,7 @@
 //!   5. Stale articles (body hash drifted from frontmatter contentHash) — free
 //!   6. Sparse articles (< 200 words)    — free
 //!   7. Missing backlinks                — free
-//!   8. Uncovered claims (via `cliproot doctor`) — free (skipped under --structural-only)
+//!   8. Uncovered claims (via `cliproot doc coverage`) — free (skipped under --structural-only)
 //!   9. Pairwise contradictions          — ~5K tokens Haiku (opt-in via --contradictions)
 
 use std::collections::BTreeSet;

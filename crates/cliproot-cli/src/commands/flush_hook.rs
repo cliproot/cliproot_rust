@@ -21,7 +21,7 @@ fn discover_cliproot_dir(cwd: &str) -> Result<PathBuf, Box<dyn std::error::Error
 
 // ── Public entry point ────────────────────────────────────────────────────────
 
-/// Called by the `cliproot flush-hook` CLI subcommand.
+/// Called by the `cliproot hook flush` CLI subcommand.
 ///
 /// When `background` is false (the default, triggered by the Claude Code Stop
 /// hook): read hook JSON from stdin, run guards, and spawn a detached child
@@ -29,6 +29,7 @@ fn discover_cliproot_dir(cwd: &str) -> Result<PathBuf, Box<dyn std::error::Error
 ///
 /// When `background` is true (the detached child invocation): open the repo
 /// from `cliproot_dir` and run the flush synchronously.
+/// `cliproot hook flush`
 pub fn run(
     harness: Harness,
     background: bool,
@@ -73,7 +74,7 @@ fn run_foreground(harness: Harness) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // 5. Spawn detached background process.
+    // 5. Spawn detached background process (`cliproot hook flush --background`).
     spawn_background(&cliproot_dir)?;
 
     // 6. Return without printing anything — Stop hooks don't need a decision.
@@ -105,7 +106,7 @@ pub(crate) fn run_background_impl(
     let knowledge_dir = cliproot_dir.join("knowledge");
 
     let outcome = flush::run_flush(&cliproot_dir, &repo);
-    eprintln!("cliproot flush-hook [background]: {outcome}");
+    eprintln!("cliproot hook flush [background]: {outcome}");
     // The detached child's stderr is /dev/null, so persist non-success outcomes
     // (errors, skipped, budget-exceeded not already logged internally) to log.md.
     log_background_outcome_if_unlogged(&knowledge_dir, "flush", &outcome);
@@ -115,7 +116,7 @@ pub(crate) fn run_background_impl(
     } else {
         compile::CompileOutcome::Skipped(format!("flush: {outcome}"))
     };
-    eprintln!("cliproot flush-hook [background] → compile: {compile_outcome}");
+    eprintln!("cliproot hook flush [background] → compile: {compile_outcome}");
     log_background_compile_outcome_if_unlogged(&knowledge_dir, &compile_outcome);
 
     Ok(compile_outcome)
@@ -155,7 +156,8 @@ fn spawn_background(cliproot_dir: &Path) -> Result<(), Box<dyn std::error::Error
         .ok_or("cliproot dir path is not valid UTF-8")?;
     background::spawn(
         &[
-            "flush-hook",
+            "hook",
+            "flush",
             "--background",
             "--cliproot-dir",
             cliproot_dir_str,

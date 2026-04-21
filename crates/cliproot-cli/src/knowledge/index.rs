@@ -1,7 +1,7 @@
 //! `index.md` — master catalog of wiki articles.
 //!
-//! Written by `cliproot compile` at the end of each compile run; read (raw,
-//! without parsing) by `cliproot session-start-hook` to inject a summary into
+//! Written by `cliproot wiki compile` at the end of each compile run; read (raw,
+//! without parsing) by `cliproot hook session-start` to inject a summary into
 //! Claude Code's context.
 //!
 //! ### On-disk format

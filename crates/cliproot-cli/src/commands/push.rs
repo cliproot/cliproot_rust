@@ -28,7 +28,7 @@ pub fn run(
         Some(token) => client.with_token(token),
         None => {
             if client.config().auth_required {
-                return Err("authentication required — run `cliproot login` first".into());
+                return Err("authentication required — run `cliproot remote login` first".into());
             }
             client
         }

@@ -29,7 +29,7 @@ pub struct FlushState {
 
     /// SHA-256 hex fingerprint of the knowledge corpus (sorted article paths +
     /// content hashes, plus today's daily hash) at the end of the most recent
-    /// successful compile run.  Phase D — gates `cliproot compile` so repeated
+    /// successful compile run.  Phase D — gates `cliproot wiki compile` so repeated
     /// runs against an unchanged corpus are no-ops.
     #[serde(default)]
     pub last_compile_hash: Option<String>,

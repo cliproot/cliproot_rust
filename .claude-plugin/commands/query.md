@@ -11,12 +11,12 @@ Answer a natural-language question from the compiled wiki with source citations.
 
 ## What it does
 
-Runs `cliproot query "<question>"` (or the `cliproot_query` MCP tool). Two phases:
+Runs `cliproot wiki query "<question>"` (or the `cliproot_wiki_query` MCP tool). Two phases:
 
 1. **Retrieve** — extract 3–8 keywords from the question (cheap Haiku call) and pick the most relevant articles from `index.md`.
 2. **Answer** — Haiku drafts an answer using the selected article bodies, preferring inline `[cliproot:sha256-…]` citations over `[[wikilinks]]`.
 
-Every call records a `Research` activity so the answer is auditable via `cliproot trace`.
+Every call records a `Research` activity so the answer is auditable via `cliproot clip trace`.
 
 ## Output
 

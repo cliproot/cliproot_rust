@@ -19,9 +19,9 @@ Activates the cliproot-capture skill principles:
 
 1. Use `cliproot_project_use` to set the active project (create with `cliproot_project_create` if needed)
 2. Research normally — the hooks will log your tool usage
-3. When you encounter key sources, explicitly `cliproot_clip` the relevant passages
-4. When combining information, `cliproot_derive` with accurate transformation types
-5. Use `cliproot_annotate` and `cliproot_cite` for inline citations and bibliography
+3. When you encounter key sources, explicitly `cliproot_clip_create` the relevant passages
+4. When combining information, `cliproot_clip_derive` with accurate transformation types
+5. Use `cliproot_doc_annotate` and `cliproot_doc_cite` for inline citations and bibliography
 
 ## Consolidation
 

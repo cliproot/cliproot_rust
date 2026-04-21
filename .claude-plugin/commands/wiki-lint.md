@@ -11,7 +11,7 @@ Audit the compiled wiki for structural and provenance invariants.
 
 ## What it does
 
-Runs `cliproot wiki-lint` (or the `cliproot_wiki_lint` MCP tool). Default run covers:
+Runs `cliproot wiki lint` (or the `cliproot_wiki_lint` MCP tool). Default run covers:
 
 1. Broken `[[wikilinks]]` — informational
 2. Broken `[cliproot:sha256-…]` citations — **load-bearing**; any finding fails the run
@@ -20,7 +20,7 @@ Runs `cliproot wiki-lint` (or the `cliproot_wiki_lint` MCP tool). Default run co
 5. Stale articles (body hash drifted from frontmatter)
 6. Sparse articles (< 200 words)
 7. Missing backlinks (one-way edges)
-8. Uncovered claims via `cliproot doctor`
+8. Uncovered claims via `cliproot doc coverage`
 
 Pass `--structural-only` to skip #8, or `--contradictions` to add the LLM-backed pairwise pass (#9, ~5k Haiku tokens).
 

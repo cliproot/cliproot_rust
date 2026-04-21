@@ -1,4 +1,4 @@
-//! `cliproot wiki-lint` — CLI wrapper around [`knowledge::lint::run_lint`].
+//! `cliproot wiki lint` — CLI wrapper around [`knowledge::lint::run_lint`].
 //!
 //! Default run executes structural checks 1–7 + the doctor coverage pass
 //! (#8).  `--structural-only` drops #8; `--contradictions` adds the LLM

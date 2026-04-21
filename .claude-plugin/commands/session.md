@@ -21,10 +21,10 @@ Activates the cliproot-session skill, which adds:
 1. **Project**: `cliproot_project_use` to scope the work
 2. **Session**: `cliproot_session_start` with project_id and agent_id
 3. **Activity**: `cliproot_activity_start` when beginning focused work
-4. **Capture**: `cliproot_clip` with activity_id and session_id
-5. **Synthesize**: `cliproot_derive` for combined/summarized content
-6. **Validate**: `cliproot_verify` and `cliproot_doctor` for integrity checks
-7. **Output**: `cliproot_annotate`, `cliproot_cite`, `cliproot_artifact_add` for deliverables
+4. **Capture**: `cliproot_clip_create` with activity_id and session_id
+5. **Synthesize**: `cliproot_clip_derive` for combined/summarized content
+6. **Validate**: `cliproot_clip_verify` and `cliproot_doc_coverage` for integrity checks
+7. **Output**: `cliproot_doc_annotate`, `cliproot_doc_cite`, `cliproot_artifact_add` for deliverables
 8. **End**: `cliproot_activity_end` and `cliproot_session_end` to finalize
 
 ## Session lifecycle

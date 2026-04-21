@@ -1,4 +1,4 @@
-//! `cliproot compile` — CLI wrapper around [`knowledge::compile::run_compile`].
+//! `cliproot wiki compile` — CLI wrapper around [`knowledge::compile::run_compile`].
 //!
 //! Foreground by default.  When `--background` is passed we detach via the
 //! shared [`background::spawn`] helper — useful for chaining from other
@@ -28,7 +28,7 @@ pub fn run(
             .to_str()
             .ok_or("cliproot dir path is not valid UTF-8")?;
         background::spawn(
-            &["compile", "--background-child", "--cliproot-dir", dir_str],
+            &["wiki", "compile", "--background-child", "--cliproot-dir", dir_str],
             "cliproot-compile",
         )?;
         return Ok(());
@@ -43,7 +43,7 @@ pub fn run(
 
     // Print a single-line summary to stderr; exit 0 for all outcomes except
     // hard errors.  Budget exceeded and Skipped are not failures.
-    eprintln!("cliproot compile: {outcome}");
+    eprintln!("cliproot wiki compile: {outcome}");
     match outcome {
         CompileOutcome::Error(e) => Err(e.into()),
         _ => Ok(()),

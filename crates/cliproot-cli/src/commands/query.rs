@@ -1,4 +1,4 @@
-//! `cliproot query` — CLI wrapper around [`knowledge::query::run_query`].
+//! `cliproot wiki query` — CLI wrapper around [`knowledge::query::run_query`].
 //!
 //! Two-phase retrieval over the compiled wiki.  Phase 1 extracts keywords
 //! from the prompt (cheap Haiku call) and picks candidate articles via
@@ -70,9 +70,9 @@ fn print_human(outcome: &query::QueryOutcome) {
                 println!("persisted: {}", p.display());
             }
         }
-        query::QueryOutcome::BudgetExceeded(r) => eprintln!("cliproot query: BUDGET_EXCEEDED {r}"),
-        query::QueryOutcome::Skipped(r) => eprintln!("cliproot query: SKIPPED {r}"),
-        query::QueryOutcome::Error(e) => eprintln!("cliproot query: ERROR {e}"),
+        query::QueryOutcome::BudgetExceeded(r) => eprintln!("cliproot wiki query: BUDGET_EXCEEDED {r}"),
+        query::QueryOutcome::Skipped(r) => eprintln!("cliproot wiki query: SKIPPED {r}"),
+        query::QueryOutcome::Error(e) => eprintln!("cliproot wiki query: ERROR {e}"),
     }
 }
 

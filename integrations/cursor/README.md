@@ -70,7 +70,7 @@ The `hooks.json` uses Cursor's matcher syntax:
 - Check `.cliproot/agent-log/` exists and is writable
 
 **Missing candidates?**
-- Run `cliproot consolidate --session <session-id>` manually to check
+- Run `cliproot session consolidate --session <session-id>` manually to check
 - Review the agent log: `cat .cliproot/agent-log/<session>.jsonl`
 
 ## Differences from Claude Code Hooks
@@ -83,4 +83,4 @@ The `hooks.json` uses Cursor's matcher syntax:
 | preCompact | Can block | Observational only |
 | Env vars | `$CLAUDE_PROJECT_DIR` | `$CURSOR_PROJECT_DIR` (and `$CLAUDE_PROJECT_DIR` alias) |
 
-The harness-aware dispatcher in `cliproot capture-hook --harness cursor` and `cliproot consolidate-hook --harness cursor` handles these differences automatically.
+The harness-aware dispatcher in `cliproot hook capture --harness cursor` and `cliproot hook consolidate --harness cursor` handles these differences automatically.

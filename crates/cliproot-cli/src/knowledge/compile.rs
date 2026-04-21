@@ -1,4 +1,4 @@
-//! `cliproot compile` — materialise the wiki.
+//! `cliproot wiki compile` — materialise the wiki.
 //!
 //! Phase D.  Runs either manually from the CLI or as the chained second stage
 //! of a background flush (after `flush::run_flush` succeeds).  Reads today's

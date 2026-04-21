@@ -1,4 +1,4 @@
-//! `cliproot query` — two-phase retrieval over the compiled wiki.
+//! `cliproot wiki query` — two-phase retrieval over the compiled wiki.
 //!
 //! Phase F.  Phase 1 extracts 3–8 keywords from the user prompt via a cheap
 //! Haiku call (JSON list), then uses deterministic
