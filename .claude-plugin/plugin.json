@@ -1,6 +1,6 @@
 {
   "name": "cliproot",
-  "version": "0.5.3",
+  "version": "0.6.0",
   "description": "Provenance tracking for AI-assisted research and multi-agent workflows",
   "author": {
     "name": "Jason Whitwill",

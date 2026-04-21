@@ -1,0 +1,72 @@
+# Changelog
+
+All notable changes to the cliproot-rust project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+
+## [0.6.0] - 2026-04-21
+
+### Changed (Breaking)
+- **CLI grammar restructure**: Adopted a noun-first command grammar for better organization and discoverability. This is a breaking change that restructures all CLI commands into 14 nouns + 2 singletons.
+
+#### New Command Structure
+| Old Command | New Command |
+|-------------|-------------|
+| `cliproot clip` | `cliproot clip create` |
+| `cliproot derive` | `cliproot clip derive` |
+| `cliproot inspect` | `cliproot clip get` |
+| `cliproot trace` | `cliproot clip trace` |
+| `cliproot verify` | `cliproot clip verify` |
+| `cliproot list` | `cliproot clip list` |
+| `cliproot copy` | `cliproot clip copy` |
+| `cliproot ingest` | `cliproot bundle import` |
+| `cliproot export` | `cliproot bundle export` |
+| `cliproot annotate` | `cliproot doc annotate` |
+| `cliproot cite` | `cliproot doc cite` |
+| `cliproot doctor` | `cliproot doc coverage` |
+| `cliproot compile` | `cliproot wiki compile` |
+| `cliproot wiki-lint` | `cliproot wiki lint` |
+| `cliproot query` | `cliproot wiki query` |
+| `cliproot record` | `cliproot session record` |
+| `cliproot consolidate` | `cliproot session consolidate` |
+| `cliproot capture-hook` | `cliproot hook capture` |
+| `cliproot consolidate-hook` | `cliproot hook consolidate` |
+| `cliproot flush-hook` | `cliproot hook flush` |
+| `cliproot session-start-hook` | `cliproot hook session-start` |
+| `cliproot login` | `cliproot remote login` |
+| `cliproot logout` | `cliproot remote logout` |
+| `cliproot push` | `cliproot remote push` |
+| `cliproot pull` | `cliproot remote pull` |
+| `cliproot search` | `cliproot remote search` |
+| `cliproot remote remove` | `cliproot remote delete` |
+
+#### MCP Tool Renames
+| Old Tool | New Tool |
+|----------|----------|
+| `cliproot_clip` | `cliproot_clip_create` |
+| `cliproot_derive` | `cliproot_clip_derive` |
+| `cliproot_inspect` | `cliproot_clip_get` |
+| `cliproot_trace` | `cliproot_clip_trace` |
+| `cliproot_verify` | `cliproot_clip_verify` |
+| `cliproot_list` | `cliproot_clip_list` |
+| `cliproot_search` | `cliproot_clip_search` |
+| `cliproot_export` | `cliproot_bundle_export` |
+| `cliproot_annotate` | `cliproot_doc_annotate` |
+| `cliproot_cite` | `cliproot_doc_cite` |
+| `cliproot_doctor` | `cliproot_doc_coverage` |
+| `cliproot_consolidate` | `cliproot_session_consolidate` |
+| `cliproot_query` | `cliproot_wiki_query` |
+
+Unchanged tools: `cliproot_wiki_lint`, `cliproot_project_*`, `cliproot_activity_*`, `cliproot_session_start/end`, `cliproot_artifact_*`, `cliproot_pack_*`.
+
+### Migration
+There is no deprecation period or aliases. All integrations, scripts, and documentation should be updated to use the new command grammar. The plugin and hook configurations are automatically updated via `cliproot init --agent --hooks`.
+
+## [0.5.3] - 2025-04-15
+
+### Added
+- Initial plugin release with MCP server, agent skills, and hooks
+- Knowledge automation with digest and wiki levels
+- OAuth 2.0 device flow authentication for registry
+- `.cliprootpack` archive format support
+

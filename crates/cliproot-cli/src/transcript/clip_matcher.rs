@@ -155,7 +155,10 @@ mod tests {
         assert!(is_cliproot_tool("cliproot_clip_create", CLIP_TOOL_PATTERNS));
         assert!(is_cliproot_tool("derive", DERIVE_TOOL_PATTERNS));
         assert!(is_cliproot_tool("cliproot_derive", DERIVE_TOOL_PATTERNS));
-        assert!(is_cliproot_tool("cliproot_clip_derive", DERIVE_TOOL_PATTERNS));
+        assert!(is_cliproot_tool(
+            "cliproot_clip_derive",
+            DERIVE_TOOL_PATTERNS
+        ));
     }
 
     #[test]

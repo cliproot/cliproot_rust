@@ -1,8 +1,8 @@
 # Cliproot End-to-End Demo — Research with Full Provenance
 
-A 15-minute walkthrough that exercises every hook and MCP tool shipped through Phase F of `karpathy_method_5.md`. The demo stages a small research session about OAuth / PKCE, lets the hooks capture and compile it, then uses the new `cliproot query` and `cliproot wiki-lint` commands to show the loop closing.
+A 15-minute walkthrough that exercises every hook and MCP tool shipped through Phase F of `karpathy_method_5.md`. The demo stages a small research session about OAuth / PKCE, lets the hooks capture and compile it, then uses the new `cliproot wiki query` and `cliproot wiki lint` commands to show the loop closing.
 
-Phases in play: **A** (plugin), **B** (skills), **C** (flush → daily digest), **D** (session-start + compile → wiki), **F** (wiki-lint + query). Phase E (`cliproot traverse`) is not yet shipped and is out of scope.
+Phases in play: **A** (plugin), **B** (skills), **C** (flush → daily digest), **D** (session-start + compile → wiki), **F** (wiki-lint + query). Phase E is not yet shipped and is out of scope.
 
 ---
 
@@ -42,21 +42,21 @@ Prompt Claude (copy-paste):
 
 > Help me understand how PKCE protects OAuth public clients. Look at the RFC summary and the Auth0 blog post. Cite specific passages as you go.
 
-Claude will use WebFetch / WebSearch. After the first tool call, `PostToolUse → cliproot capture-hook` starts writing JSONL to `.cliproot/agent-log/<session>.jsonl` (phase A, already in place).
+Claude will use WebFetch / WebSearch. After the first tool call, `PostToolUse → cliproot hook capture` starts writing JSONL to `.cliproot/agent-log/<session>.jsonl` (phase A, already in place).
 
 Now demonstrate **explicit clipping** — ask Claude to highlight what mattered. A good follow-up prompt:
 
-> For each of those two sources, call `cliproot_clip` on the single sentence that most cleanly explains how PKCE defeats the code-interception attack. Then `cliproot_derive` a one-paragraph synthesis citing both clips with `transformation_type = "combine"`.
+> For each of those two sources, call `cliproot_clip_create` on the single sentence that most cleanly explains how PKCE defeats the code-interception attack. Then `cliproot_clip_derive` a one-paragraph synthesis citing both clips with `transformation_type = "combine"`.
 
 Expected tool calls:
-- `cliproot_clip` × 2 — one per source, with `source_type = "external-quoted"`
-- `cliproot_derive` × 1 — synthesis clip with `from = [clip1_hash, clip2_hash]`
+- `cliproot_clip_create` × 2 — one per source, with `source_type = "external-quoted"`
+- `cliproot_clip_derive` × 1 — synthesis clip with `from = [clip1_hash, clip2_hash]`
 
 Show the resulting provenance:
 
 ```bash
-cliproot list                             # the 3 new clips show up
-cliproot trace <synthesis-clip-hash>      # shows derivation lineage back to both sources
+cliproot clip list                        # the 3 new clips show up
+cliproot clip trace <synthesis-clip-hash> # shows derivation lineage back to both sources
 ```
 
 ---
@@ -65,9 +65,9 @@ cliproot trace <synthesis-clip-hash>      # shows derivation lineage back to bot
 
 When you close the Claude Code session (or type `/quit`), three hooks run in order:
 
-1. **`consolidate-hook`** (Stop) — prints any still-unhighlighted sources as a block message. If you missed clipping something, it shows up here.
-2. **`flush-hook`** (Stop, level ≥ digest) — detached-spawns `cliproot flush-hook`. A few seconds later `.cliproot/knowledge/daily/2026-04-18.md` appears with the daily digest. Records a `Derive` activity.
-3. **`flush-hook`** chains into **`cliproot compile`** (level ≥ wiki, hour ≥ `compile_after_hour`) — which uses Haiku to synthesize wiki articles from the digest + index.
+1. **`hook consolidate`** (Stop) — prints any still-unhighlighted sources as a block message. If you missed clipping something, it shows up here.
+2. **`hook flush`** (Stop, level ≥ digest) — detached-spawns `cliproot hook flush`. A few seconds later `.cliproot/knowledge/daily/2026-04-18.md` appears with the daily digest. Records a `Derive` activity.
+3. **`hook flush`** chains into **`cliproot wiki compile`** (level ≥ wiki, hour ≥ `compile_after_hour`) — which uses Haiku to synthesize wiki articles from the digest + index.
 
 Wait ~30 s, then:
 
@@ -89,7 +89,7 @@ head -10 .cliproot/knowledge/concepts/pkce-flow.md
 
 ## 3. Day 2 session — SessionStart injection (phase D payoff)
 
-Open a fresh Claude Code session in the same directory. The `SessionStart` hook now runs against a populated wiki and injects:
+Open a fresh Claude Code session in the same directory. The `hook session-start` now runs against a populated wiki and injects:
 
 - `index.md` headings (article count, titles, types)
 - The most recent daily digest's H2 headings
@@ -104,12 +104,12 @@ Claude will paraphrase the injected context.
 
 ---
 
-## 4. `cliproot query` — two-phase retrieval (NEW in Phase F)
+## 4. `cliproot wiki query` — two-phase retrieval (NEW in Phase F)
 
 From the CLI:
 
 ```bash
-cliproot query "how does our OAuth flow handle PKCE code-interception attacks?"
+cliproot wiki query "how does our OAuth flow handle PKCE code-interception attacks?"
 ```
 
 What happens under the hood:
@@ -134,7 +134,7 @@ citations: 2 clip(s)
 Same query with file-back:
 
 ```bash
-cliproot query "how does PKCE handle code-interception?" --file-back
+cliproot wiki query "how does PKCE handle code-interception?" --file-back
 ls .cliproot/knowledge/qa/          # how-does-pkce-handle-code-interception.md
 ```
 
@@ -142,16 +142,16 @@ Rerun the same question — the UUID on the generated Q&A article is preserved a
 
 From inside Claude Code, exercise the MCP path:
 
-> Use `cliproot_query` to ask: "what's the relationship between PKCE and the authorization code flow?"
+> Use `cliproot_wiki_query` to ask: "what's the relationship between PKCE and the authorization code flow?"
 
 The MCP tool shells out to the CLI and returns the JSON outcome.
 
 ---
 
-## 5. `cliproot wiki-lint` — provenance hygiene (NEW in Phase F)
+## 5. `cliproot wiki lint` — provenance hygiene (NEW in Phase F)
 
 ```bash
-cliproot wiki-lint
+cliproot wiki lint
 ```
 
 Checks, in order:
@@ -163,12 +163,12 @@ Checks, in order:
 5. Stale articles (body drifted from frontmatter `contentHash`)
 6. Sparse articles (< 200 words)
 7. Missing backlinks (one-way edges)
-8. Uncovered claims — paragraph-level `cliproot doctor` pass
+8. Uncovered claims — paragraph-level `cliproot doc coverage` pass
 
 Run the LLM-backed contradiction pass on top:
 
 ```bash
-cliproot wiki-lint --contradictions --report
+cliproot wiki lint --contradictions --report
 # → .cliproot/knowledge/reports/wiki-lint-2026-04-18.md
 ```
 
@@ -177,9 +177,9 @@ Prove the load-bearing invariant — manually break a citation, rerun, watch exi
 ```bash
 sed -i 's/sha256-[a-zA-Z0-9_-]\{40,\}/sha256-DEADBEEF/' \
     .cliproot/knowledge/concepts/pkce-flow.md
-cliproot wiki-lint; echo "exit=$?"    # exit=1, with a #2 finding
+cliproot wiki lint; echo "exit=$?"    # exit=1, with a #2 finding
 # Undo:
-cliproot compile                        # rewrites the article from index
+cliproot wiki compile                   # rewrites the article from index
 ```
 
 From inside Claude Code:
@@ -193,18 +193,18 @@ From inside Claude Code:
 Pick any clip hash from §1 and follow the lineage the hooks recorded:
 
 ```bash
-CLIP=$(cliproot list --limit 1 --format json | jq -r '.[0].clipHash')
+CLIP=$(cliproot clip list --limit 1 --format json | jq -r '.[0].clipHash')
 
-cliproot inspect "$CLIP"        # full clip metadata
-cliproot trace   "$CLIP"        # derivation DAG upward to sources
-cliproot export  "$CLIP"        # full CRP bundle (all activities + edges)
+cliproot clip get    "$CLIP"    # full clip metadata
+cliproot clip trace  "$CLIP"    # derivation DAG upward to sources
+cliproot bundle export "$CLIP"  # full CRP bundle (all activities + edges)
 ```
 
 You should see:
 - The clip itself
 - The `Derive` activity from the day-1 synthesis
-- The `Derive` activity from `cliproot compile` — linked via `CitedIn` to the wiki article
-- The `Research` activity from `cliproot query` — linked via `used` to the cited clips
+- The `Derive` activity from `cliproot wiki compile` — linked via `CitedIn` to the wiki article
+- The `Research` activity from `cliproot wiki query` — linked via `used` to the cited clips
 
 **This is the point of the demo.** A research question Claude answered today draws a straight, verifiable line back to the two sentences you highlighted yesterday.
 
@@ -227,20 +227,20 @@ rm -rf .cliproot
 | Symptom | Likely cause |
 |---|---|
 | Hooks never fire | Plugin not installed user-scope, or `cliproot` not on PATH — run `bin/install-cliproot.sh` |
-| `flush-hook` logs `BUDGET_EXCEEDED` | Daily token/cost cap hit; `cliproot config set knowledge.max_bg_tokens_per_day 100000` |
-| `compile` silently skips | Before `compile_after_hour` (default 18:00) — run `cliproot compile` manually |
-| `query` returns `Skipped: empty wiki index` | No compile has run yet — do §2 first |
-| `query` returns `Skipped: level … does not allow query` | `knowledge.level` is `curator`; set to `wiki` |
-| `wiki-lint` fails only #2 | Broken citations — a compile after a clip was purged; rerun `cliproot compile` or investigate with `cliproot verify <hash>` |
+| `hook flush` logs `BUDGET_EXCEEDED` | Daily token/cost cap hit; `cliproot config set knowledge.max_bg_tokens_per_day 100000` |
+| `wiki compile` silently skips | Before `compile_after_hour` (default 18:00) — run `cliproot wiki compile` manually |
+| `wiki query` returns `Skipped: empty wiki index` | No compile has run yet — do §2 first |
+| `wiki query` returns `Skipped: level … does not allow query` | `knowledge.level` is `curator`; set to `wiki` |
+| `wiki lint` fails only #2 | Broken citations — a compile after a clip was purged; rerun `cliproot wiki compile` or investigate with `cliproot clip verify <hash>` |
 
 ---
 
 ## What this demonstrates
 
-- **Capture (Phase A/B)** — hooks record tool usage without explicit agent effort; `cliproot_clip` / `cliproot_derive` mark what was load-bearing.
+- **Capture (Phase A/B)** — hooks record tool usage without explicit agent effort; `cliproot_clip_create` / `cliproot_clip_derive` mark what was load-bearing.
 - **Flush (Phase C)** — the day's work is summarized on Haiku once, under a strict daily budget, as a daily digest artifact.
 - **Compile (Phase D)** — the digest is promoted into durable, UUID-stable wiki articles with full citation edges back to the originating clips.
 - **SessionStart (Phase D)** — the next session begins already aware of what the wiki covers, for zero tokens.
-- **Query + Wiki-Lint (Phase F)** — answers are grounded in the wiki with `[cliproot:sha256-…]` citations; a single command audits the whole corpus for structural and provenance invariants.
+- **Query + Wiki Lint (Phase F)** — answers are grounded in the wiki with `[cliproot:sha256-…]` citations; a single command audits the whole corpus for structural and provenance invariants.
 
 Everything above was exercised without the agent ever fabricating a citation. Claims trace to clips; clips trace to URLs.

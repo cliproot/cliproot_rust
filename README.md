@@ -164,22 +164,22 @@ The standalone `cliproot-mcp` binary is also still available for backward compat
 
 | Tool | Description |
 |------|-------------|
-| `cliproot_clip` | Capture a source clip from a URL with exact quoted text |
-| `cliproot_derive` | Derive a new clip from one or more parent clips |
+| `cliproot_clip_create` | Capture a source clip from a URL with exact quoted text |
+| `cliproot_clip_derive` | Derive a new clip from one or more parent clips |
 | `cliproot_project_create/list/use/delete` | Manage project scopes |
 | `cliproot_artifact_add/list/get/link` | Store and retrieve artifacts |
 | `cliproot_pack_create/import/inspect/verify` | Create and restore `.cliprootpack` archives |
 | `cliproot_activity_start/end` | Track prompt-scoped activities |
 | `cliproot_session_start/end` | Track agent sessions and finalize session artifacts |
-| `cliproot_inspect` | Inspect a clip by hash or ID |
-| `cliproot_trace` | Show full ancestor lineage through `wasDerivedFrom` edges |
-| `cliproot_verify` | Verify hash integrity of one clip or all clips |
-| `cliproot_list` | List clips with optional filtering |
-| `cliproot_search` | Search clip content by substring |
-| `cliproot_export` | Export a clip and its full provenance lineage as a CRP bundle |
-| `cliproot_annotate` | Annotate a document with inline citations by matching text against stored clips |
-| `cliproot_cite` | Generate a bibliography/citation list for a document from clip provenance |
-| `cliproot_doctor` | Generate a provenance coverage report showing which paragraphs have source provenance |
+| `cliproot_clip_get` | Get a clip by hash or ID |
+| `cliproot_clip_trace` | Show full ancestor lineage through `wasDerivedFrom` edges |
+| `cliproot_clip_verify` | Verify hash integrity of one clip or all clips |
+| `cliproot_clip_list` | List clips with optional filtering |
+| `cliproot_clip_search` | Search clip content by substring |
+| `cliproot_bundle_export` | Export a clip and its full provenance lineage as a CRP bundle |
+| `cliproot_doc_annotate` | Annotate a document with inline citations by matching text against stored clips |
+| `cliproot_doc_cite` | Generate a bibliography/citation list for a document from clip provenance |
+| `cliproot_doc_coverage` | Generate a provenance coverage report showing which paragraphs have source provenance |
 
 ### Agent Skills
 
@@ -303,7 +303,7 @@ cliproot init --agent
 ### Create a clip from a URL
 
 ```bash
-cliproot clip --url https://example.com/article --quote "The key insight is provenance."
+cliproot clip create --url https://example.com/article --quote "The key insight is provenance."
 # → prints the clip hash, text hash, and content preview
 ```
 
@@ -317,12 +317,12 @@ cliproot project list
 cliproot project use auth-refactor
 ```
 
-Once a current project is selected, `clip`, `derive`, and `artifact add` will use it by default unless you pass `--project`.
+Once a current project is selected, `clip create`, `clip derive`, and `artifact add` will use it by default unless you pass `--project`.
 
 ### Derive a clip from a parent
 
 ```bash
-cliproot derive \
+cliproot clip derive \
   --from sha256-abc123... \
   --quote "Summary: provenance is key." \
   --activity-type summary
@@ -358,24 +358,24 @@ cliproot artifact link sha256-clip... sha256-artifact... --relationship cited_in
 ### Inspect a clip
 
 ```bash
-cliproot inspect sha256-abc123...
-cliproot inspect my-clip-id
+cliproot clip get sha256-abc123...
+cliproot clip get my-clip-id
 ```
 
 ### List clips
 
 ```bash
-cliproot list
-cliproot list --limit 20
-cliproot list --document doc_01
-cliproot list --project auth-refactor
-cliproot list --format table
+cliproot clip list
+cliproot clip list --limit 20
+cliproot clip list --document doc_01
+cliproot clip list --project auth-refactor
+cliproot clip list --format table
 ```
 
 ### Trace lineage
 
 ```bash
-cliproot trace sha256-def456...
+cliproot clip trace sha256-def456...
 # → prints ancestor chain with transformation types
 ```
 
@@ -383,26 +383,26 @@ cliproot trace sha256-def456...
 
 ```bash
 # Verify all clips in the repository
-cliproot verify
+cliproot clip verify
 
 # Verify a single clip
-cliproot verify sha256-abc123...
+cliproot clip verify sha256-abc123...
 ```
 
 ### Export a clip + lineage as a CRP bundle
 
 ```bash
-cliproot export sha256-abc123... -o bundle.json
+cliproot bundle export sha256-abc123... -o bundle.json
 # or pipe to stdout
-cliproot export sha256-abc123...
+cliproot bundle export sha256-abc123...
 ```
 
 The exported bundle is CRP `v0.0.3` and includes project metadata, generalized edges, linked artifacts, and activities when they are reachable from the exported lineage.
 
-### Ingest a CRP bundle
+### Import a CRP bundle
 
 ```bash
-cliproot ingest bundle.json
+cliproot bundle import bundle.json
 ```
 
 ### Create a `.cliprootpack`
@@ -443,21 +443,21 @@ Match document text against stored clips and insert citation markers.
 
 ```bash
 # Print annotated document to stdout (footnote style by default)
-cliproot annotate report.md
+cliproot doc annotate report.md
 
 # Choose annotation style
-cliproot annotate report.md --style footnote          # [1] markers + Sources section
-cliproot annotate report.md --style inline-comment    # <!-- [cliproot:sha256-...] --> comments
-cliproot annotate report.md --style bracket           # [cliproot:sha256-...] inline
+cliproot doc annotate report.md --style footnote          # [1] markers + Sources section
+cliproot doc annotate report.md --style inline-comment    # <!-- [cliproot:sha256-...] --> comments
+cliproot doc annotate report.md --style bracket           # [cliproot:sha256-...] inline
 
 # Edit the file in place
-cliproot annotate report.md --in-place
+cliproot doc annotate report.md --in-place
 
 # Adjust match sensitivity (default: 0.4)
-cliproot annotate report.md --threshold 0.6
+cliproot doc annotate report.md --threshold 0.6
 
 # JSON output — full AnnotateResult with annotated_text and citations array
-cliproot annotate report.md --format json
+cliproot doc annotate report.md --format json
 ```
 
 ### Generate a citation list
@@ -465,11 +465,11 @@ cliproot annotate report.md --format json
 Produce a numbered bibliography matching document text against stored clips.
 
 ```bash
-cliproot cite report.md
+cliproot doc cite report.md
 # → 1. [Title] <url> (sha256-...)
 
-cliproot cite report.md --threshold 0.5
-cliproot cite report.md --format json
+cliproot doc cite report.md --threshold 0.5
+cliproot doc cite report.md --format json
 ```
 
 ### Provenance coverage report
@@ -477,12 +477,12 @@ cliproot cite report.md --format json
 Audit which paragraphs in a document have source provenance and which are missing it.
 
 ```bash
-cliproot doctor report.md
+cliproot doc coverage report.md
 # → ✓ [0] Redis uses a single-threaded event loop...
 # → ✗ [1] This paragraph has no provenance coverage.
 
-cliproot doctor report.md --threshold 0.5
-cliproot doctor report.md --format json
+cliproot doc coverage report.md --threshold 0.5
+cliproot doc coverage report.md --format json
 ```
 
 Coverage statuses: `covered` (strong match), `partial` (weak match), `uncovered` (no match found).
@@ -493,15 +493,15 @@ When a registry has authentication enabled (`authRequired: true` in its config),
 
 ```bash
 # Interactive login — opens browser for device authorization
-cliproot login
-cliproot login --remote origin
+cliproot remote login
+cliproot remote login --remote origin
 
 # CI/automation — store a pre-existing token directly
-cliproot login --token crp_...
+cliproot remote login --token crp_...
 
 # Log out — removes stored credentials
-cliproot logout
-cliproot logout --remote origin
+cliproot remote logout
+cliproot remote logout --remote origin
 ```
 
 **Token resolution order:**
@@ -513,7 +513,7 @@ When pushing to an authenticated registry, the CLI automatically attaches the st
 
 ```bash
 export CLIPROOT_TOKEN=crp_...  # CI usage
-cliproot push                  # token is attached automatically
+cliproot remote push           # token is attached automatically
 ```
 ### Reconstruct a design record from a Claude Code session
 
@@ -521,25 +521,25 @@ After a Claude Code session, reconstruct a structured design record showing what
 
 ```bash
 # Reconstruct the most recent session (auto-detected from ~/.claude/projects/)
-cliproot record
+cliproot session record
 
 # Preview what would be captured without writing anything
-cliproot record --dry-run
+cliproot session record --dry-run
 
 # Reconstruct a specific session by ID
-cliproot record --session 811a6ab9
+cliproot session record --session 811a6ab9
 
 # Include the last 3 sessions (multi-day explorations)
-cliproot record --last 3
+cliproot session record --last 3
 
 # Point to an explicit JSONL transcript
-cliproot record --jsonl ~/.claude/projects/-Volumes-.../session.jsonl
+cliproot session record --jsonl ~/.claude/projects/-Volumes-.../session.jsonl
 
 # Also create a .cliprootpack for sharing
-cliproot record --pack
+cliproot session record --pack
 ```
 
-`cliproot record` parses the Claude Code JSONL transcript, cross-references clip/derive tool calls against `.cliproot/index.db`, merges the hook-generated agent log (from `cliproot capture-hook`) if available, infers activities from conversation turns, and produces:
+`cliproot session record` parses the Claude Code JSONL transcript, cross-references clip/derive tool calls against `.cliproot/index.db`, merges the hook-generated agent log (from `cliproot hook capture`) if available, infers activities from conversation turns, and produces:
 
 - A session + activities stored in `.cliproot/` with full clip linkage
 - A human-readable markdown design record at `.cliproot/records/rec-<id>.md`
@@ -564,9 +564,9 @@ cliproot help <command>
 ├── artifacts/           # raw artifact bytes keyed by sha256-...
 ├── objects/
 │   └── sha256-{hash}.json   # one bundle file per stored bundle
-├── agent-log/           # PostToolUse hook capture logs (written by cliproot capture-hook)
+├── agent-log/           # PostToolUse hook capture logs (written by cliproot hook capture)
 │   └── {session-id}.jsonl
-└── records/             # human-readable design records (written by cliproot record)
+└── records/             # human-readable design records (written by cliproot session record)
     └── rec-{id}.md
 ```
 
