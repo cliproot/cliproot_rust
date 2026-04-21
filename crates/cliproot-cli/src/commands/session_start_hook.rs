@@ -1,4 +1,4 @@
-//! `cliproot session-start-hook` — Claude Code SessionStart injection.
+//! `cliproot hook session-start` — Claude Code SessionStart injection.
 //!
 //! Phase D.  Reads `.cliproot/knowledge/index.md` and the most recent
 //! `daily/*.md`, builds a short (~5 KB) plaintext block, and emits it to

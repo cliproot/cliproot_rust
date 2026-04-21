@@ -257,7 +257,7 @@ mod tests {
     fn count_human_messages_mixed() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("transcript.jsonl");
-        let lines = vec![
+        let lines = [
             r#"{"uuid":"1","timestamp":"2026-04-11T14:00:00Z","message":{"role":"user","content":[{"type":"text","text":"hello"}]}}"#,
             r#"{"uuid":"2","timestamp":"2026-04-11T14:01:00Z","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]}}"#,
             r#"{"uuid":"3","timestamp":"2026-04-11T14:02:00Z","message":{"role":"user","content":[{"type":"text","text":"question"}]}}"#,

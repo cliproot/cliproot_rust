@@ -40,129 +40,90 @@ enum Commands {
         hooks: bool,
     },
 
-    /// Capture a PostToolUse hook event (reads JSON from stdin)
-    #[command(name = "capture-hook")]
-    CaptureHook {
-        /// AI harness (claude-code, cursor, codex)
-        #[arg(long, value_enum, default_value = "claude-code")]
-        harness: commands::harness::Harness,
-    },
-
-    /// Surface unclipped sources from agent-log for review
-    Consolidate {
-        /// Session ID to consolidate
-        #[arg(long)]
-        session: String,
-
-        /// Process ALL unconsolidated entries and write candidate artifact
-        #[arg(long)]
-        emergency: bool,
-
-        /// Advance watermark after consolidation
-        #[arg(long)]
-        commit: bool,
-    },
-
-    /// Handle Stop/PreCompact hook events for consolidation (reads JSON from stdin)
-    #[command(name = "consolidate-hook")]
-    ConsolidateHook {
-        /// AI harness (claude-code, cursor, codex)
-        #[arg(long, value_enum, default_value = "claude-code")]
-        harness: commands::harness::Harness,
-
-        /// Emergency mode for PreCompact hooks
-        #[arg(long)]
-        emergency: bool,
-    },
-
-    /// Handle Stop hook events: spawn a detached background flush process (reads JSON from stdin)
-    #[command(name = "flush-hook")]
-    FlushHook {
-        /// AI harness (claude-code, cursor, codex)
-        #[arg(long, value_enum, default_value = "claude-code")]
-        harness: commands::harness::Harness,
-
-        /// Internal flag: run flush in the foreground (used by the spawned child)
-        #[arg(long, hide = true)]
-        background: bool,
-
-        /// Path to .cliproot/ directory (required when --background is set)
-        #[arg(long, hide = true)]
-        cliproot_dir: Option<std::path::PathBuf>,
-    },
-
-    /// Handle Claude Code SessionStart hook events: inject a wiki snapshot as additionalContext
-    #[command(name = "session-start-hook")]
-    SessionStartHook {
-        /// AI harness (claude-code only — other harnesses exit clean)
-        #[arg(long, value_enum, default_value = "claude-code")]
-        harness: commands::harness::Harness,
-
-        /// Path to .cliproot/ directory (testing override)
-        #[arg(long, hide = true)]
-        cliproot_dir: Option<std::path::PathBuf>,
-    },
-
-    /// Compile today's daily digest into concept/connection/qa wiki articles
-    Compile {
-        /// Path to .cliproot/ directory (default: walk up from cwd)
-        #[arg(long)]
-        cliproot_dir: Option<std::path::PathBuf>,
-
-        /// Run compile in a detached background process
-        #[arg(long)]
-        background: bool,
-
-        /// Internal: we are the detached child — do the work synchronously
-        #[arg(long, hide = true)]
-        background_child: bool,
-    },
-
-    /// Reconstruct a design record from a Claude Code session
-    Record {
-        /// Claude Code session ID (default: most recent)
-        #[arg(long)]
-        session: Option<String>,
-
-        /// Explicit Claude Code session directory path
-        #[arg(long)]
-        session_dir: Option<String>,
-
-        /// Explicit path to session JSONL file
-        #[arg(long)]
-        jsonl: Option<String>,
-
-        /// Path to hook-generated agent log (default: auto-detect)
-        #[arg(long)]
-        hook_log: Option<String>,
-
-        /// Include last N sessions (for multi-session explorations)
-        #[arg(long)]
-        last: Option<u32>,
-
-        /// Cliproot project to scope reconstruction to
-        #[arg(long)]
-        project: Option<String>,
-
-        /// Include subagent transcripts (default: true)
-        #[arg(long, default_value = "true")]
-        include_subagents: bool,
-
-        /// Show what would be reconstructed without writing
-        #[arg(long)]
-        dry_run: bool,
-
-        /// Also create a .cliprootpack archive
-        #[arg(long)]
-        pack: bool,
-
-        /// Output path for pack or session artifact
-        #[arg(short, long)]
-        output: Option<String>,
-    },
-
-    /// Create a source record + clip from a URL
+    /// Manage clips (create, copy, derive, get, trace, verify, list)
     Clip {
+        #[command(subcommand)]
+        command: ClipCommands,
+    },
+
+    /// Import/export CRP bundles
+    Bundle {
+        #[command(subcommand)]
+        command: BundleCommands,
+    },
+
+    /// Document analysis (annotate, cite, coverage)
+    Doc {
+        #[command(subcommand)]
+        command: DocCommands,
+    },
+
+    /// Wiki management (compile, lint, query)
+    Wiki {
+        #[command(subcommand)]
+        command: WikiCommands,
+    },
+
+    /// Hook handlers for AI agent integration
+    Hook {
+        #[command(subcommand)]
+        command: HookCommands,
+    },
+
+    /// Start the MCP stdio server for AI agents
+    Mcp {
+        /// Path to .cliproot/ repository (defaults to CLIPROOT_REPO or CWD discovery)
+        #[arg(long, short)]
+        path: Option<String>,
+    },
+
+    /// Manage projects
+    Project {
+        #[command(subcommand)]
+        command: ProjectCommands,
+    },
+
+    /// Manage artifacts
+    Artifact {
+        #[command(subcommand)]
+        command: ArtifactCommands,
+    },
+
+    /// Create, inspect, verify, and import .cliprootpack archives
+    Pack {
+        #[command(subcommand)]
+        command: PackCommands,
+    },
+
+    /// Manage registry remotes
+    Remote {
+        #[command(subcommand)]
+        command: RemoteCommands,
+    },
+
+    /// Track prompt-scoped activities
+    Activity {
+        #[command(subcommand)]
+        command: ActivityCommands,
+    },
+
+    /// Track and record agent sessions
+    Session {
+        #[command(subcommand)]
+        command: SessionCommands,
+    },
+
+    /// Read or write a repository config key (e.g. knowledge.level)
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum ClipCommands {
+    /// Create a source record + clip from a URL
+    Create {
         /// Source URL
         #[arg(long)]
         url: String,
@@ -246,7 +207,7 @@ enum Commands {
     },
 
     /// Display clip details
-    Inspect {
+    Get {
         /// Clip hash or id
         hash_or_id: String,
     },
@@ -281,9 +242,12 @@ enum Commands {
         #[arg(long, default_value = "50")]
         limit: u32,
     },
+}
 
+#[derive(Subcommand)]
+enum BundleCommands {
     /// Import a CRP bundle file
-    Ingest {
+    Import {
         /// Path to bundle JSON file
         path: String,
     },
@@ -297,7 +261,10 @@ enum Commands {
         #[arg(short, long)]
         output: Option<String>,
     },
+}
 
+#[derive(Subcommand)]
+enum DocCommands {
     /// Insert inline citations into a document by matching text against stored clips
     Annotate {
         /// Path to the document file
@@ -327,7 +294,7 @@ enum Commands {
     },
 
     /// Provenance coverage report for a document
-    Doctor {
+    Coverage {
         /// Path to the document file
         file: String,
 
@@ -335,101 +302,113 @@ enum Commands {
         #[arg(long, default_value = "0.4")]
         threshold: f64,
     },
+}
 
-    /// Start the MCP stdio server for AI agents
-    Mcp {
-        /// Path to .cliproot/ repository (defaults to CLIPROOT_REPO or CWD discovery)
-        #[arg(long, short)]
-        path: Option<String>,
-    },
-
-    /// Manage projects
-    Project {
-        #[command(subcommand)]
-        command: ProjectCommands,
-    },
-
-    /// Manage artifacts
-    Artifact {
-        #[command(subcommand)]
-        command: ArtifactCommands,
-    },
-
-    /// Create, inspect, verify, and import .cliprootpack archives
-    Pack {
-        #[command(subcommand)]
-        command: PackCommands,
-    },
-
-    /// Manage registry remotes
-    Remote {
-        #[command(subcommand)]
-        command: RemoteCommands,
-    },
-
-    /// Push a project's provenance to a registry
-    Push {
-        /// Project id (defaults to current project)
-        project: Option<String>,
-        /// Remote name (defaults to default remote)
+#[derive(Subcommand)]
+enum WikiCommands {
+    /// Compile today's daily digest into concept/connection/qa wiki articles
+    Compile {
+        /// Path to .cliproot/ directory (default: walk up from cwd)
         #[arg(long)]
-        remote: Option<String>,
-    },
+        cliproot_dir: Option<std::path::PathBuf>,
 
-    /// Pull a project's provenance from a registry
-    Pull {
-        /// Project name on the registry
-        project: Option<String>,
-        /// Remote name (defaults to default remote)
+        /// Run compile in a detached background process
         #[arg(long)]
-        remote: Option<String>,
+        background: bool,
+
+        /// Internal: we are the detached child — do the work synchronously
+        #[arg(long, hide = true)]
+        background_child: bool,
     },
 
-    /// Search clips on a remote registry
-    Search {
-        /// Search query
-        query: String,
-        /// Remote name (defaults to default remote)
+    /// Lint the compiled wiki for structural and provenance invariants
+    Lint {
+        /// Path to .cliproot/ directory (default: walk up from cwd)
         #[arg(long)]
-        remote: Option<String>,
-        /// Maximum results
-        #[arg(long, default_value = "20")]
-        limit: u32,
-    },
+        cliproot_dir: Option<std::path::PathBuf>,
 
-    /// Authenticate with a registry
-    Login {
-        /// Use a pre-existing token instead of device flow (for CI)
+        /// Skip the coverage pass (check #8) — run only file-structural checks 1–7
         #[arg(long)]
-        token: Option<String>,
-        /// Remote name (defaults to default remote)
+        structural_only: bool,
+
+        /// Also run check #9 (pairwise contradiction detection, LLM, ~5k tokens)
         #[arg(long)]
-        remote: Option<String>,
-    },
+        contradictions: bool,
 
-    /// Log out from a registry
-    Logout {
-        /// Remote name (defaults to default remote)
+        /// Treat any failing check as an error (exit 1).  Without it, only
+        /// broken `[cliproot:sha256-...]` citations fail the run.
         #[arg(long)]
-        remote: Option<String>,
+        strict: bool,
+
+        /// Write a timestamped report to `<knowledge_dir>/reports/wiki-lint-YYYY-MM-DD.md`
+        #[arg(long)]
+        report: bool,
     },
 
-    /// Track prompt-scoped activities
-    Activity {
-        #[command(subcommand)]
-        command: ActivityCommands,
+    /// Two-phase retrieval over the compiled wiki
+    Query {
+        /// The natural-language question to answer
+        prompt: String,
+
+        /// Path to .cliproot/ directory (default: walk up from cwd)
+        #[arg(long)]
+        cliproot_dir: Option<std::path::PathBuf>,
+
+        /// Persist the answer as `qa/<slug>.md` in the knowledge tree
+        #[arg(long)]
+        file_back: bool,
+
+        /// Upper bound on articles fed to the answer phase
+        #[arg(long, default_value = "6")]
+        top_k: usize,
+    },
+}
+
+#[derive(Subcommand)]
+enum HookCommands {
+    /// Capture a PostToolUse hook event (reads JSON from stdin)
+    Capture {
+        /// AI harness (claude-code, cursor, codex)
+        #[arg(long, value_enum, default_value = "claude-code")]
+        harness: commands::harness::Harness,
     },
 
-    /// Track agent sessions that can be restored as artifacts
-    Session {
-        #[command(subcommand)]
-        command: SessionCommands,
+    /// Handle Stop/PreCompact hook events for consolidation (reads JSON from stdin)
+    Consolidate {
+        /// AI harness (claude-code, cursor, codex)
+        #[arg(long, value_enum, default_value = "claude-code")]
+        harness: commands::harness::Harness,
+
+        /// Emergency mode for PreCompact hooks
+        #[arg(long)]
+        emergency: bool,
     },
 
-    /// Read or write a repository config key (e.g. knowledge.level)
-    Config {
-        #[command(subcommand)]
-        action: ConfigAction,
+    /// Handle Stop hook events: spawn a detached background flush process (reads JSON from stdin)
+    Flush {
+        /// AI harness (claude-code, cursor, codex)
+        #[arg(long, value_enum, default_value = "claude-code")]
+        harness: commands::harness::Harness,
+
+        /// Internal flag: run flush in the foreground (used by the spawned child)
+        #[arg(long, hide = true)]
+        background: bool,
+
+        /// Path to .cliproot/ directory (required when --background is set)
+        #[arg(long, hide = true)]
+        cliproot_dir: Option<std::path::PathBuf>,
+    },
+
+    /// Handle Claude Code SessionStart hook events: inject a wiki snapshot as additionalContext
+    #[command(name = "session-start")]
+    SessionStart {
+        /// AI harness (claude-code only — other harnesses exit clean)
+        #[arg(long, value_enum, default_value = "claude-code")]
+        harness: commands::harness::Harness,
+
+        /// Path to .cliproot/ directory (testing override)
+        #[arg(long, hide = true)]
+        cliproot_dir: Option<std::path::PathBuf>,
     },
 }
 
@@ -570,17 +549,60 @@ enum RemoteCommands {
         #[arg(long)]
         owner: Option<String>,
     },
-    /// Remove a registry remote
-    Remove {
+    /// Delete a registry remote
+    Delete {
         /// Remote name
         name: String,
     },
     /// List configured remotes
     List,
+    /// Push a project's provenance to a registry
+    Push {
+        /// Project id (defaults to current project)
+        project: Option<String>,
+        /// Remote name (defaults to default remote)
+        #[arg(long)]
+        remote: Option<String>,
+    },
+    /// Pull a project's provenance from a registry
+    Pull {
+        /// Project name on the registry
+        project: Option<String>,
+        /// Remote name (defaults to default remote)
+        #[arg(long)]
+        remote: Option<String>,
+    },
+    /// Search clips on a remote registry
+    Search {
+        /// Search query
+        query: String,
+        /// Remote name (defaults to default remote)
+        #[arg(long)]
+        remote: Option<String>,
+        /// Maximum results
+        #[arg(long, default_value = "20")]
+        limit: u32,
+    },
+    /// Authenticate with a registry
+    Login {
+        /// Use a pre-existing token instead of device flow (for CI)
+        #[arg(long)]
+        token: Option<String>,
+        /// Remote name (defaults to default remote)
+        #[arg(long)]
+        remote: Option<String>,
+    },
+    /// Log out from a registry
+    Logout {
+        /// Remote name (defaults to default remote)
+        #[arg(long)]
+        remote: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
 enum SessionCommands {
+    /// Start a new agent session
     Start {
         #[arg(long)]
         agent: Option<String>,
@@ -589,8 +611,63 @@ enum SessionCommands {
         #[arg(long)]
         metadata: Option<String>,
     },
-    End {
-        session_id: String,
+    /// End an agent session
+    End { session_id: String },
+    /// Reconstruct a design record from a session
+    Record {
+        /// Session ID (default: most recent)
+        #[arg(long)]
+        session: Option<String>,
+
+        /// Explicit session directory path
+        #[arg(long)]
+        session_dir: Option<String>,
+
+        /// Explicit path to session JSONL file
+        #[arg(long)]
+        jsonl: Option<String>,
+
+        /// Path to hook-generated agent log (default: auto-detect)
+        #[arg(long)]
+        hook_log: Option<String>,
+
+        /// Include last N sessions (for multi-session explorations)
+        #[arg(long)]
+        last: Option<u32>,
+
+        /// Cliproot project to scope reconstruction to
+        #[arg(long)]
+        project: Option<String>,
+
+        /// Include subagent transcripts (default: true)
+        #[arg(long, default_value = "true")]
+        include_subagents: bool,
+
+        /// Show what would be reconstructed without writing
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Also create a .cliprootpack archive
+        #[arg(long)]
+        pack: bool,
+
+        /// Output path for pack or session artifact
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+    /// Surface unclipped sources from agent-log for review
+    Consolidate {
+        /// Session ID to consolidate
+        #[arg(long)]
+        session: String,
+
+        /// Process ALL unconsolidated entries and write candidate artifact
+        #[arg(long)]
+        emergency: bool,
+
+        /// Advance watermark after consolidation
+        #[arg(long)]
+        commit: bool,
     },
 }
 
@@ -599,134 +676,135 @@ fn main() {
 
     let result = match cli.command {
         Commands::Init { agent, hooks } => commands::init::run(agent, hooks, None),
-        Commands::CaptureHook { harness } => commands::capture_hook::run(harness),
-        Commands::Consolidate {
-            session,
-            emergency,
-            commit,
-        } => commands::consolidate::run(&session, emergency, commit, &cli.format),
-        Commands::ConsolidateHook { harness, emergency } => {
-            commands::consolidate_hook::run(harness, emergency)
-        }
-        Commands::FlushHook {
-            harness,
-            background,
-            cliproot_dir,
-        } => commands::flush_hook::run(harness, background, cliproot_dir),
-        Commands::SessionStartHook {
-            harness,
-            cliproot_dir,
-        } => {
-            commands::session_start_hook::run(harness, cliproot_dir);
-            Ok(())
-        }
-        Commands::Compile {
-            cliproot_dir,
-            background,
-            background_child,
-        } => commands::compile::run(cliproot_dir, background, background_child),
-        Commands::Record {
-            session,
-            session_dir,
-            jsonl,
-            hook_log,
-            last,
-            project,
-            include_subagents,
-            dry_run,
-            pack,
-            output,
-        } => commands::record::run(
-            commands::record::RecordOptions {
-                session_id: session,
-                session_dir,
-                jsonl,
-                hook_log_path: hook_log,
-                last,
+        Commands::Clip { command } => match command {
+            ClipCommands::Create {
+                url,
+                quote,
+                source_type,
+                id,
+                document_id,
                 project,
-                include_subagents,
-                dry_run,
-                pack,
-                output,
-            },
-            &cli.format,
-        ),
-        Commands::Clip {
-            url,
-            quote,
-            source_type,
-            id,
-            document_id,
-            project,
-            title,
-            activity,
-            session,
-            copy,
-        } => commands::clip::run(
-            &url,
-            &quote,
-            &source_type,
-            id,
-            document_id,
-            project,
-            title,
-            activity.as_deref(),
-            session.as_deref(),
-            copy,
-            &cli.format,
-        ),
-        Commands::Copy { hash_or_id, plain } => {
-            commands::copy::run(&hash_or_id, plain, &cli.format)
-        }
-        Commands::Derive {
-            from,
-            quote,
-            activity_type,
-            agent,
-            project,
-            activity,
-            session,
-        } => commands::derive::run(
-            &from,
-            &quote,
-            &activity_type,
-            agent.as_deref(),
-            project.as_deref(),
-            activity.as_deref(),
-            session.as_deref(),
-            &cli.format,
-        ),
-        Commands::Inspect { hash_or_id } => commands::inspect::run(&hash_or_id, &cli.format),
-        Commands::Trace { hash_or_id } => commands::trace::run(&hash_or_id, &cli.format),
-        Commands::Verify { hash_or_id } => {
-            commands::verify::run(hash_or_id.as_deref(), &cli.format)
-        }
-        Commands::List {
-            document,
-            source_type,
-            project,
-            limit,
-        } => commands::list::run(
-            document.as_deref(),
-            source_type.as_deref(),
-            project.as_deref(),
-            limit,
-            &cli.format,
-        ),
-        Commands::Ingest { path } => commands::ingest::run(&path, &cli.format),
-        Commands::Export { hash, output } => {
-            commands::export::run(&hash, output.as_deref(), &cli.format)
-        }
-        Commands::Annotate {
-            file,
-            style,
-            in_place,
-            threshold,
-        } => commands::annotate::run(&file, &style, in_place, threshold, &cli.format),
-        Commands::Cite { file, threshold } => commands::cite::run(&file, threshold, &cli.format),
-        Commands::Doctor { file, threshold } => {
-            commands::doctor::run(&file, threshold, &cli.format)
-        }
+                title,
+                activity,
+                session,
+                copy,
+            } => commands::clip::run(
+                &url,
+                &quote,
+                &source_type,
+                id,
+                document_id,
+                project,
+                title,
+                activity.as_deref(),
+                session.as_deref(),
+                copy,
+                &cli.format,
+            ),
+            ClipCommands::Copy { hash_or_id, plain } => {
+                commands::copy::run(&hash_or_id, plain, &cli.format)
+            }
+            ClipCommands::Derive {
+                from,
+                quote,
+                activity_type,
+                agent,
+                project,
+                activity,
+                session,
+            } => commands::derive::run(
+                &from,
+                &quote,
+                &activity_type,
+                agent.as_deref(),
+                project.as_deref(),
+                activity.as_deref(),
+                session.as_deref(),
+                &cli.format,
+            ),
+            ClipCommands::Get { hash_or_id } => commands::inspect::run(&hash_or_id, &cli.format),
+            ClipCommands::Trace { hash_or_id } => commands::trace::run(&hash_or_id, &cli.format),
+            ClipCommands::Verify { hash_or_id } => {
+                commands::verify::run(hash_or_id.as_deref(), &cli.format)
+            }
+            ClipCommands::List {
+                document,
+                source_type,
+                project,
+                limit,
+            } => commands::list::run(
+                document.as_deref(),
+                source_type.as_deref(),
+                project.as_deref(),
+                limit,
+                &cli.format,
+            ),
+        },
+        Commands::Bundle { command } => match command {
+            BundleCommands::Import { path } => commands::ingest::run(&path, &cli.format),
+            BundleCommands::Export { hash, output } => {
+                commands::export::run(&hash, output.as_deref(), &cli.format)
+            }
+        },
+        Commands::Doc { command } => match command {
+            DocCommands::Annotate {
+                file,
+                style,
+                in_place,
+                threshold,
+            } => commands::annotate::run(&file, &style, in_place, threshold, &cli.format),
+            DocCommands::Cite { file, threshold } => {
+                commands::cite::run(&file, threshold, &cli.format)
+            }
+            DocCommands::Coverage { file, threshold } => {
+                commands::doctor::run(&file, threshold, &cli.format)
+            }
+        },
+        Commands::Wiki { command } => match command {
+            WikiCommands::Compile {
+                cliproot_dir,
+                background,
+                background_child,
+            } => commands::compile::run(cliproot_dir, background, background_child),
+            WikiCommands::Lint {
+                cliproot_dir,
+                structural_only,
+                contradictions,
+                strict,
+                report,
+            } => commands::wiki_lint::run(
+                cliproot_dir,
+                structural_only,
+                contradictions,
+                strict,
+                report,
+                &cli.format,
+            ),
+            WikiCommands::Query {
+                prompt,
+                cliproot_dir,
+                file_back,
+                top_k,
+            } => commands::query::run(&prompt, cliproot_dir, file_back, top_k, &cli.format),
+        },
+        Commands::Hook { command } => match command {
+            HookCommands::Capture { harness } => commands::capture_hook::run(harness),
+            HookCommands::Consolidate { harness, emergency } => {
+                commands::consolidate_hook::run(harness, emergency)
+            }
+            HookCommands::Flush {
+                harness,
+                background,
+                cliproot_dir,
+            } => commands::flush_hook::run(harness, background, cliproot_dir),
+            HookCommands::SessionStart {
+                harness,
+                cliproot_dir,
+            } => {
+                commands::session_start_hook::run(harness, cliproot_dir);
+                Ok(())
+            }
+        },
         Commands::Mcp { path } => commands::mcp::run(path.as_deref()),
         Commands::Project { command } => match command {
             ProjectCommands::Create {
@@ -796,24 +874,26 @@ fn main() {
             RemoteCommands::Add { name, url, owner } => {
                 commands::remote::add(&name, &url, owner.as_deref(), &cli.format)
             }
-            RemoteCommands::Remove { name } => commands::remote::remove(&name, &cli.format),
+            RemoteCommands::Delete { name } => commands::remote::remove(&name, &cli.format),
             RemoteCommands::List => commands::remote::list(&cli.format),
+            RemoteCommands::Push { project, remote } => {
+                commands::push::run(project.as_deref(), remote.as_deref(), &cli.format)
+            }
+            RemoteCommands::Pull { project, remote } => {
+                commands::pull::run(project.as_deref(), remote.as_deref(), &cli.format)
+            }
+            RemoteCommands::Search {
+                query,
+                remote,
+                limit,
+            } => commands::search::run(&query, remote.as_deref(), limit, &cli.format),
+            RemoteCommands::Login { token, remote } => {
+                commands::login::run(token.as_deref(), remote.as_deref(), &cli.format)
+            }
+            RemoteCommands::Logout { remote } => {
+                commands::logout::run(remote.as_deref(), &cli.format)
+            }
         },
-        Commands::Push { project, remote } => {
-            commands::push::run(project.as_deref(), remote.as_deref(), &cli.format)
-        }
-        Commands::Pull { project, remote } => {
-            commands::pull::run(project.as_deref(), remote.as_deref(), &cli.format)
-        }
-        Commands::Search {
-            query,
-            remote,
-            limit,
-        } => commands::search::run(&query, remote.as_deref(), limit, &cli.format),
-        Commands::Login { token, remote } => {
-            commands::login::run(token.as_deref(), remote.as_deref(), &cli.format)
-        }
-        Commands::Logout { remote } => commands::logout::run(remote.as_deref(), &cli.format),
         Commands::Activity { command } => match command {
             ActivityCommands::Start {
                 activity_type,
@@ -847,6 +927,37 @@ fn main() {
                 &cli.format,
             ),
             SessionCommands::End { session_id } => commands::session::end(&session_id, &cli.format),
+            SessionCommands::Record {
+                session,
+                session_dir,
+                jsonl,
+                hook_log,
+                last,
+                project,
+                include_subagents,
+                dry_run,
+                pack,
+                output,
+            } => commands::record::run(
+                commands::record::RecordOptions {
+                    session_id: session,
+                    session_dir,
+                    jsonl,
+                    hook_log_path: hook_log,
+                    last,
+                    project,
+                    include_subagents,
+                    dry_run,
+                    pack,
+                    output,
+                },
+                &cli.format,
+            ),
+            SessionCommands::Consolidate {
+                session,
+                emergency,
+                commit,
+            } => commands::consolidate::run(&session, emergency, commit, &cli.format),
         },
         Commands::Config { action } => match action {
             ConfigAction::Get { key } => commands::config::get(&key),

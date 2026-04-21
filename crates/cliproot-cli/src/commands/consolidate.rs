@@ -336,8 +336,8 @@ impl CandidateList {
         format!(
             "Cliproot found {} source(s) you consulted but didn't highlight:\n\n{}\n\
              Review: for any source that informed your reasoning, highlight the key passage \
-             with cliproot_clip. For syntheses, consider recording derivations with \
-             cliproot_derive. Sources you don't highlight will still appear in the provenance \
+             with cliproot clip create / cliproot_clip_create. For syntheses, consider recording derivations with \
+             cliproot clip derive / cliproot_clip_derive. Sources you don't highlight will still appear in the provenance \
              graph as consulted-but-not-cited.",
             total,
             parts.join("\n")
@@ -667,7 +667,7 @@ mod tests {
         let reason = list.format_block_reason();
         assert!(reason.contains("docs.rust-lang.org"));
         assert!(reason.contains("accessed 2x"));
-        assert!(reason.contains("cliproot_clip"));
+        assert!(reason.contains("cliproot clip create") || reason.contains("cliproot_clip_create"));
     }
 
     #[test]

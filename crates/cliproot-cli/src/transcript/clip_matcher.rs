@@ -14,13 +14,13 @@ pub struct MatchedClip {
     pub clip: Clip,
     /// The transcript tool_use event UUID that produced this clip.
     pub tool_use_uuid: String,
-    /// Whether this is a derived clip (from cliproot_derive) vs a source clip.
+    /// Whether this is a derived clip (from cliproot_clip_derive / cliproot_derive) vs a source clip.
     pub is_derived: bool,
 }
 
 /// MCP tool name patterns for cliproot clip/derive operations.
-const CLIP_TOOL_PATTERNS: &[&str] = &["clip", "cliproot_clip"];
-const DERIVE_TOOL_PATTERNS: &[&str] = &["derive", "cliproot_derive"];
+const CLIP_TOOL_PATTERNS: &[&str] = &["clip", "cliproot_clip", "cliproot_clip_create"];
+const DERIVE_TOOL_PATTERNS: &[&str] = &["derive", "cliproot_derive", "cliproot_clip_derive"];
 
 /// Match transcript tool calls against stored clips in the repository.
 ///
@@ -152,7 +152,13 @@ mod tests {
     fn detects_direct_tool_name() {
         assert!(is_cliproot_tool("clip", CLIP_TOOL_PATTERNS));
         assert!(is_cliproot_tool("cliproot_clip", CLIP_TOOL_PATTERNS));
+        assert!(is_cliproot_tool("cliproot_clip_create", CLIP_TOOL_PATTERNS));
         assert!(is_cliproot_tool("derive", DERIVE_TOOL_PATTERNS));
+        assert!(is_cliproot_tool("cliproot_derive", DERIVE_TOOL_PATTERNS));
+        assert!(is_cliproot_tool(
+            "cliproot_clip_derive",
+            DERIVE_TOOL_PATTERNS
+        ));
     }
 
     #[test]

@@ -3,14 +3,14 @@
   "hooks": {
     "postToolUse": [
       {
-        "command": "cliproot capture-hook --harness cursor",
+        "command": "cliproot hook capture --harness cursor",
         "matcher": "WebFetch|Read|Write|Edit|Bash|Agent",
         "type": "command",
         "timeout": 30,
         "failClosed": false
       },
       {
-        "command": "cliproot capture-hook --harness cursor",
+        "command": "cliproot hook capture --harness cursor",
         "matcher": "mcp__cliproot__*",
         "type": "command",
         "timeout": 30,
@@ -19,7 +19,7 @@
     ],
     "stop": [
       {
-        "command": "cliproot consolidate-hook --harness cursor",
+        "command": "cliproot hook consolidate --harness cursor",
         "type": "command",
         "timeout": 60,
         "failClosed": false
@@ -27,7 +27,7 @@
     ],
     "preCompact": [
       {
-        "command": "cliproot consolidate-hook --harness cursor --emergency",
+        "command": "cliproot hook consolidate --harness cursor --emergency",
         "type": "command",
         "timeout": 60,
         "failClosed": false

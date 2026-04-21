@@ -169,7 +169,7 @@ pub fn write_article(
 
     let canonical_key = canonical_key_override
         .map(|s| s.to_string())
-        .unwrap_or_else(|| canonical_key_from_title(title));
+        .unwrap_or_else(|| slug.to_string());
 
     // Preserve existing UUID if present; otherwise derive deterministically.
     let uuid = if file_path.exists() {

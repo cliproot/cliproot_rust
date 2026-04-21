@@ -11,7 +11,7 @@ Manually trigger consolidation of unhighlighted sources.
 
 ## What it does
 
-Runs `cliproot consolidate-hook --manual` to scan recent tool usage and identify:
+Runs `cliproot session consolidate --session <id>` to scan recent tool usage and identify:
 - Sources consulted but not yet clipped
 - Files written that might need derivation records
 - Opportunities to strengthen provenance before output

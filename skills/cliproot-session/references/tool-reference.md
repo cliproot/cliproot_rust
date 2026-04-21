@@ -4,7 +4,7 @@ Complete parameter documentation for the Phase 3 Cliproot MCP tools.
 
 ---
 
-## cliproot_clip
+## cliproot_clip_create
 
 Capture a source clip from a URL with exact quoted text.
 
@@ -22,7 +22,7 @@ Capture a source clip from a URL with exact quoted text.
 
 ---
 
-## cliproot_derive
+## cliproot_clip_derive
 
 Create a derived clip from one or more parent clips.
 
@@ -74,32 +74,45 @@ Start and end restorable agent sessions. Session end materializes a `session` ar
 
 ---
 
-## cliproot_inspect / trace / list / search
+## cliproot_session_consolidate
+
+Manual consolidation check for when hooks are not available.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `session` | string | no | — | Session ID to consolidate (if omitted, uses current/default session) |
+| `emergency` | boolean | no | `false` | Emergency mode for pre-commit compaction |
+| `commit` | boolean | no | `false` | Commit mode to finalize the consolidation |
+
+---
+
+## cliproot_clip_get / trace / list / search
 
 Exploration and lineage tools for understanding the current provenance graph before creating new work.
 
 Use these to:
 
-- inspect full clip metadata
-- trace derivation chains
-- search existing content
+- `cliproot_clip_get` — inspect full clip metadata
+- `cliproot_clip_trace` — trace derivation chains
+- `cliproot_clip_search` — search clip content by text
+- `cliproot_clip_list` — list clips with filters
 - avoid duplicating already-grounded research
 
 ---
 
-## cliproot_verify / doctor
+## cliproot_clip_verify / doc_coverage
 
 Validation tools for checking integrity and provenance coverage before final output.
 
 ---
 
-## cliproot_annotate / cite / export
+## cliproot_doc_annotate / cite / bundle_export
 
 Output tools for surfacing provenance in final deliverables and sharing provenance lineage with others.
 
 ---
 
-## cliproot_inspect
+## cliproot_clip_get
 
 Display full details of a clip.
 
@@ -109,7 +122,7 @@ Display full details of a clip.
 
 ---
 
-## cliproot_trace
+## cliproot_clip_trace
 
 Show the ancestor lineage tree for a clip.
 
@@ -119,7 +132,7 @@ Show the ancestor lineage tree for a clip.
 
 ---
 
-## cliproot_verify
+## cliproot_clip_verify
 
 Verify hash integrity of clips.
 
@@ -129,7 +142,7 @@ Verify hash integrity of clips.
 
 ---
 
-## cliproot_list
+## cliproot_clip_list
 
 List clips with optional filters.
 
@@ -141,7 +154,7 @@ List clips with optional filters.
 
 ---
 
-## cliproot_search
+## cliproot_clip_search
 
 Search clip content by text.
 
@@ -152,7 +165,7 @@ Search clip content by text.
 
 ---
 
-## cliproot_export
+## cliproot_bundle_export
 
 Export a clip with its full provenance lineage as a CRP bundle.
 
@@ -162,7 +175,7 @@ Export a clip with its full provenance lineage as a CRP bundle.
 
 ---
 
-## cliproot_annotate
+## cliproot_doc_annotate
 
 Insert inline citations into a document by matching text against stored clips.
 
@@ -174,7 +187,7 @@ Insert inline citations into a document by matching text against stored clips.
 
 ---
 
-## cliproot_cite
+## cliproot_doc_cite
 
 Generate a bibliography/citation list from clip provenance.
 
@@ -185,7 +198,7 @@ Generate a bibliography/citation list from clip provenance.
 
 ---
 
-## cliproot_doctor
+## cliproot_doc_coverage
 
 Produce a provenance coverage report for a document.
 

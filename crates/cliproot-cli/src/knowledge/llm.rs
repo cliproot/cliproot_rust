@@ -140,7 +140,12 @@ pub fn call(
         }],
     };
 
-    let client = reqwest::blocking::Client::new();
+    // Anthropic compile/query responses can take >30s when generating up to
+    // MAX_OUTPUT_TOKENS. reqwest::blocking's default timeout is 30s, so set a
+    // generous ceiling to avoid spurious "operation timed out" errors.
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()?;
     let response = client
         .post("https://api.anthropic.com/v1/messages")
         .header("x-api-key", &api_key)
@@ -297,17 +302,19 @@ mod tests {
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn make_state(tokens: u64, cost: f64) -> FlushState {
-        let mut s = FlushState::default();
-        s.daily_total_tokens = tokens;
-        s.daily_total_cost_usd = cost;
-        s
+        FlushState {
+            daily_total_tokens: tokens,
+            daily_total_cost_usd: cost,
+            ..Default::default()
+        }
     }
 
     fn make_cfg(max_tokens: u64, max_cost: f64) -> KnowledgeConfig {
-        let mut cfg = KnowledgeConfig::default();
-        cfg.max_bg_tokens_per_day = max_tokens;
-        cfg.max_bg_cost_per_day_usd = max_cost;
-        cfg
+        KnowledgeConfig {
+            max_bg_tokens_per_day: max_tokens,
+            max_bg_cost_per_day_usd: max_cost,
+            ..Default::default()
+        }
     }
 
     #[test]

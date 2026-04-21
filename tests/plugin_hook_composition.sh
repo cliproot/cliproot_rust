@@ -82,10 +82,10 @@ else
 fi
 
 # Assert cliproot was invoked
-if grep -q "capture-hook" "$CLIPROOT_INVOCATION_LOG" 2>/dev/null; then
-  echo "PASS: cliproot capture-hook invoked"
+if grep -q "hook capture" "$CLIPROOT_INVOCATION_LOG" 2>/dev/null; then
+  echo "PASS: cliproot hook capture invoked"
 else
-  echo "FAIL: cliproot capture-hook was NOT invoked" >&2
+  echo "FAIL: cliproot hook capture was NOT invoked" >&2
   exit 1
 fi
 
@@ -106,10 +106,10 @@ else
   exit 1
 fi
 
-if grep -q "consolidate-hook" "$CLIPROOT_INVOCATION_LOG" 2>/dev/null; then
-  echo "PASS: cliproot consolidate-hook invoked"
+if grep -q "hook consolidate" "$CLIPROOT_INVOCATION_LOG" 2>/dev/null; then
+  echo "PASS: cliproot hook consolidate invoked"
 else
-  echo "FAIL: cliproot consolidate-hook was NOT invoked" >&2
+  echo "FAIL: cliproot hook consolidate was NOT invoked" >&2
   exit 1
 fi
 

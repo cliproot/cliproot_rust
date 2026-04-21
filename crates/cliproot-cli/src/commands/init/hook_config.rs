@@ -128,19 +128,19 @@ fn install_claude_hooks(root: &Path) -> Result<ConfigAction, Box<dyn std::error:
     let hooks_obj = hooks.as_object_mut().ok_or("hooks is not a JSON object")?;
 
     let mut any_added = false;
-    any_added |= install_hook_entry(hooks_obj, "PostToolUse", "cliproot capture-hook")?;
-    any_added |= install_hook_entry(hooks_obj, "Stop", "cliproot consolidate-hook")?;
-    any_added |= install_hook_entry(hooks_obj, "Stop", "cliproot flush-hook")?;
+    any_added |= install_hook_entry(hooks_obj, "PostToolUse", "cliproot hook capture")?;
+    any_added |= install_hook_entry(hooks_obj, "Stop", "cliproot hook consolidate")?;
+    any_added |= install_hook_entry(hooks_obj, "Stop", "cliproot hook flush")?;
     any_added |= install_hook_entry(
         hooks_obj,
         "PreCompact",
-        "cliproot consolidate-hook --emergency",
+        "cliproot hook consolidate --emergency",
     )?;
     // SessionStart: Claude Code only — Cursor/Codex silently skip it (P-D9).
     any_added |= install_hook_entry(
         hooks_obj,
         "SessionStart",
-        "cliproot session-start-hook --harness claude-code",
+        "cliproot hook session-start --harness claude-code",
     )?;
 
     if !any_added {
@@ -170,14 +170,14 @@ fn install_cursor_hooks(root: &Path) -> Result<ConfigAction, Box<dyn std::error:
         "hooks": {
             "postToolUse": [
                 {
-                    "command": "cliproot capture-hook --harness cursor",
+                    "command": "cliproot hook capture --harness cursor",
                     "matcher": "WebFetch|Read|Write|Edit|Bash|Agent",
                     "type": "command",
                     "timeout": 30,
                     "failClosed": false
                 },
                 {
-                    "command": "cliproot capture-hook --harness cursor",
+                    "command": "cliproot hook capture --harness cursor",
                     "matcher": "mcp__cliproot__*",
                     "type": "command",
                     "timeout": 30,
@@ -186,7 +186,7 @@ fn install_cursor_hooks(root: &Path) -> Result<ConfigAction, Box<dyn std::error:
             ],
             "stop": [
                 {
-                    "command": "cliproot consolidate-hook --harness cursor",
+                    "command": "cliproot hook consolidate --harness cursor",
                     "type": "command",
                     "timeout": 60,
                     "failClosed": false
@@ -194,7 +194,7 @@ fn install_cursor_hooks(root: &Path) -> Result<ConfigAction, Box<dyn std::error:
             ],
             "preCompact": [
                 {
-                    "command": "cliproot consolidate-hook --harness cursor --emergency",
+                    "command": "cliproot hook consolidate --harness cursor --emergency",
                     "type": "command",
                     "timeout": 60,
                     "failClosed": false
@@ -240,7 +240,7 @@ fn has_cursor_cliproot_hooks(doc: &serde_json::Value) -> bool {
                 entry
                     .get("command")
                     .and_then(|c| c.as_str())
-                    .map(|cmd| cmd.contains("cliproot capture-hook"))
+                    .map(|cmd| cmd.contains("cliproot hook capture"))
                     .unwrap_or(false)
             })
         })
@@ -311,24 +311,24 @@ mod tests {
 
         let hook = &content["hooks"]["PostToolUse"][0]["hooks"][0];
         assert_eq!(hook["type"], "command");
-        assert_eq!(hook["command"], "cliproot capture-hook");
+        assert_eq!(hook["command"], "cliproot hook capture");
 
         let stop_hook = &content["hooks"]["Stop"][0]["hooks"][0];
-        assert_eq!(stop_hook["command"], "cliproot consolidate-hook");
+        assert_eq!(stop_hook["command"], "cliproot hook consolidate");
 
         let flush_stop_hook = &content["hooks"]["Stop"][1]["hooks"][0];
-        assert_eq!(flush_stop_hook["command"], "cliproot flush-hook");
+        assert_eq!(flush_stop_hook["command"], "cliproot hook flush");
 
         let precompact_hook = &content["hooks"]["PreCompact"][0]["hooks"][0];
         assert_eq!(
             precompact_hook["command"],
-            "cliproot consolidate-hook --emergency"
+            "cliproot hook consolidate --emergency"
         );
 
         let session_start_hook = &content["hooks"]["SessionStart"][0]["hooks"][0];
         assert_eq!(
             session_start_hook["command"],
-            "cliproot session-start-hook --harness claude-code"
+            "cliproot hook session-start --harness claude-code"
         );
     }
 
@@ -378,7 +378,7 @@ mod tests {
         // Hook added
         assert_eq!(
             content["hooks"]["PostToolUse"][0]["hooks"][0]["command"],
-            "cliproot capture-hook"
+            "cliproot hook capture"
         );
     }
 
@@ -389,7 +389,7 @@ mod tests {
         fs::create_dir_all(&claude_dir).unwrap();
         fs::write(
             claude_dir.join("settings.json"),
-            r#"{"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":"cliproot capture-hook"}]}],"Stop":[{"hooks":[{"type":"command","command":"cliproot consolidate-hook"}]},{"hooks":[{"type":"command","command":"cliproot flush-hook"}]}],"PreCompact":[{"hooks":[{"type":"command","command":"cliproot consolidate-hook --emergency"}]}],"SessionStart":[{"hooks":[{"type":"command","command":"cliproot session-start-hook --harness claude-code"}]}]}}"#,
+            r#"{"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":"cliproot hook capture"}]}],"Stop":[{"hooks":[{"type":"command","command":"cliproot hook consolidate"}]},{"hooks":[{"type":"command","command":"cliproot hook flush"}]}],"PreCompact":[{"hooks":[{"type":"command","command":"cliproot hook consolidate --emergency"}]}],"SessionStart":[{"hooks":[{"type":"command","command":"cliproot hook session-start --harness claude-code"}]}]}}"#,
         )
         .unwrap();
 
@@ -455,14 +455,17 @@ mod tests {
         .unwrap();
 
         assert_eq!(content["version"], 1);
-        assert!(content["hooks"]["postToolUse"].as_array().unwrap().len() >= 1);
+        assert!(!content["hooks"]["postToolUse"]
+            .as_array()
+            .unwrap()
+            .is_empty());
 
-        // Check for cliproot capture-hook command
+        // Check for cliproot hook capture command
         let post_tool_use = content["hooks"]["postToolUse"].as_array().unwrap();
         assert!(post_tool_use.iter().any(|entry| {
             entry["command"]
                 .as_str()
-                .map(|c| c.contains("cliproot capture-hook"))
+                .map(|c| c.contains("cliproot hook capture"))
                 .unwrap_or(false)
         }));
 
@@ -471,7 +474,7 @@ mod tests {
         assert!(stop.iter().any(|entry| {
             entry["command"]
                 .as_str()
-                .map(|c| c.contains("consolidate-hook"))
+                .map(|c| c.contains("hook consolidate"))
                 .unwrap_or(false)
         }));
     }
@@ -482,7 +485,7 @@ mod tests {
         fs::create_dir_all(dir.path().join(".cursor")).unwrap();
         fs::write(
             dir.path().join(".cursor/hooks.json"),
-            r#"{"version":1,"hooks":{"postToolUse":[{"command":"cliproot capture-hook --harness cursor","matcher":"WebFetch"}]}}"#,
+            r#"{"version":1,"hooks":{"postToolUse":[{"command":"cliproot hook capture --harness cursor","matcher":"WebFetch"}]}}"#,
         )
         .unwrap();
 

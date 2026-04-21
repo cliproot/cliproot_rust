@@ -29,7 +29,7 @@ pub struct FlushState {
 
     /// SHA-256 hex fingerprint of the knowledge corpus (sorted article paths +
     /// content hashes, plus today's daily hash) at the end of the most recent
-    /// successful compile run.  Phase D — gates `cliproot compile` so repeated
+    /// successful compile run.  Phase D — gates `cliproot wiki compile` so repeated
     /// runs against an unchanged corpus are no-ops.
     #[serde(default)]
     pub last_compile_hash: Option<String>,
@@ -149,9 +149,11 @@ mod tests {
     #[test]
     fn roundtrip_state() {
         let dir = tempfile::tempdir().unwrap();
-        let mut state = FlushState::default();
-        state.daily_total_tokens = 12_345;
-        state.daily_total_cost_usd = 0.12;
+        let mut state = FlushState {
+            daily_total_tokens: 12_345,
+            daily_total_cost_usd: 0.12,
+            ..Default::default()
+        };
         state
             .last_flushed_line_counts
             .insert("abc123".to_string(), 50);

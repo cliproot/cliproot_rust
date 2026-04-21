@@ -2,5 +2,7 @@ pub mod article;
 pub mod compile;
 pub mod flush;
 pub mod index;
+pub mod lint;
 pub mod llm;
+pub mod query;
 pub mod state;

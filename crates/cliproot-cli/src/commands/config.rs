@@ -28,7 +28,9 @@ fn read_key(cfg: &KnowledgeConfig, key: &str) -> Result<String, Box<dyn std::err
         "knowledge.maxBgCostPerDayUsd" => Ok(cfg.max_bg_cost_per_day_usd.to_string()),
         "knowledge.models.flush" => Ok(cfg.models.flush.clone()),
         "knowledge.models.compile" => Ok(cfg.models.compile.clone()),
-        _ => Err(format!("unknown config key: {key}\n\nSupported keys:\n  knowledge.level  (minimal|curator|digest|wiki|team)\n  knowledge.maxBgTokensPerDay\n  knowledge.maxBgCostPerDayUsd\n  knowledge.models.flush\n  knowledge.models.compile").into()),
+        "knowledge.models.lint" => Ok(cfg.models.lint.clone()),
+        "knowledge.models.query" => Ok(cfg.models.query.clone()),
+        _ => Err(format!("unknown config key: {key}\n\nSupported keys:\n  knowledge.level  (minimal|curator|digest|wiki|team)\n  knowledge.maxBgTokensPerDay\n  knowledge.maxBgCostPerDayUsd\n  knowledge.models.flush\n  knowledge.models.compile\n  knowledge.models.lint\n  knowledge.models.query").into()),
     }
 }
 
@@ -57,8 +59,14 @@ fn write_key(
         "knowledge.models.compile" => {
             cfg.models.compile = value.to_string();
         }
+        "knowledge.models.lint" => {
+            cfg.models.lint = value.to_string();
+        }
+        "knowledge.models.query" => {
+            cfg.models.query = value.to_string();
+        }
         _ => {
-            return Err(format!("unknown config key: {key}\n\nSupported keys:\n  knowledge.level  (minimal|curator|digest|wiki|team)\n  knowledge.maxBgTokensPerDay\n  knowledge.maxBgCostPerDayUsd\n  knowledge.models.flush\n  knowledge.models.compile").into());
+            return Err(format!("unknown config key: {key}\n\nSupported keys:\n  knowledge.level  (minimal|curator|digest|wiki|team)\n  knowledge.maxBgTokensPerDay\n  knowledge.maxBgCostPerDayUsd\n  knowledge.models.flush\n  knowledge.models.compile\n  knowledge.models.lint\n  knowledge.models.query").into());
         }
     }
     Ok(())

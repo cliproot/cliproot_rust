@@ -3,4 +3,4 @@
 # Scans recent activity and prompts for consolidation of unhighlighted sources
 
 "${CLAUDE_PLUGIN_ROOT}/bin/install-cliproot.sh" || exit 0
-exec cliproot consolidate-hook --harness claude-code
+exec cliproot hook consolidate --harness claude-code
