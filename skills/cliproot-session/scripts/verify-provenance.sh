@@ -4,10 +4,10 @@
 set -euo pipefail
 
 echo "=== Verifying clip integrity ==="
-cliproot verify
+cliproot clip verify
 
 if [ -n "${1:-}" ]; then
     echo ""
     echo "=== Provenance coverage for $1 ==="
-    cliproot doctor "$1"
+    cliproot doc coverage "$1"
 fi

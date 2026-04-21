@@ -37,42 +37,42 @@ At the beginning and end of an agent run:
 ### 3. ACTIVITY — Capture Prompt-Scoped Reasoning
 When beginning a focused unit of work:
 - Use `cliproot_activity_start` with `activity_type`, `prompt`, and optional `parameters`
-- Pass the returned `activity_id` into `cliproot_clip` and `cliproot_derive`
+- Pass the returned `activity_id` into `cliproot_clip_create` and `cliproot_clip_derive`
 - Use `cliproot_activity_end` after the work is complete
 
 ### 4. CAPTURE — Gather Evidence
 When encountering external content (URLs, articles, docs, code):
-- Use `cliproot_clip` to capture exact quoted passages
+- Use `cliproot_clip_create` to capture exact quoted passages
 - Include meaningful `id` values for easy reference
 - Set appropriate `source_type` (external-quoted, human-authored, ai-generated)
 - Pass `activity_id` and `session_id` when active
 
 ### 5. SYNTHESIZE — Build Knowledge
 When combining, summarizing, or analyzing clips:
-- Use `cliproot_derive` with parent clip IDs/hashes
+- Use `cliproot_clip_derive` with parent clip IDs/hashes
 - Set `transformation_type` accurately (summary, combine, paraphrase, etc.)
 - Pass `activity_id` and `session_id` so generated clips stay attached to the tracked workflow
 
 ### 6. VALIDATE — Check Integrity
 Periodically and before any output:
-- Use `cliproot_verify` to check hash integrity of all clips
-- Use `cliproot_doctor` on draft documents to audit provenance coverage
+- Use `cliproot_clip_verify` to check hash integrity of all clips
+- Use `cliproot_doc_coverage` on draft documents to audit provenance coverage
 
 ### 7. EXPLORE — Understand Prior Work
 Before starting new research or when checking whether a claim is already grounded:
-- Use `cliproot_query` to ask the compiled wiki directly — returns a cited answer drawing from prior concept/connection/qa articles
-- Use `cliproot_search` or `cliproot_list` to find existing clips
-- Use `cliproot_inspect` for full clip details
-- Use `cliproot_trace` to understand derivation lineage
+- Use `cliproot_wiki_query` to ask the compiled wiki directly — returns a cited answer drawing from prior concept/connection/qa articles
+- Use `cliproot_clip_search` or `cliproot_clip_list` to find existing clips
+- Use `cliproot_clip_get` for full clip details
+- Use `cliproot_clip_trace` to understand derivation lineage
 - Build on existing work rather than duplicating it
 
 ### 8. OUTPUT — Produce Cited, Shareable Context
 When generating final documents or handing work to another agent:
-- Use `cliproot_annotate` to embed inline citations in text
-- Use `cliproot_cite` to generate a bibliography
+- Use `cliproot_doc_annotate` to embed inline citations in text
+- Use `cliproot_doc_cite` to generate a bibliography
 - Use `cliproot_artifact_add` to store markdown notes, plans, prompts, or JSON context
 - Use `cliproot_artifact_link` to attach artifacts to the clips they explain
-- Use `cliproot_pack_create` or `cliproot_export` to share portable context
+- Use `cliproot_pack_create` or `cliproot_bundle_export` to share portable context
 - Use `cliproot_pack_import` when restoring work from a pack
 
 ## Consolidation — Review Unhighlighted Sources
@@ -80,11 +80,11 @@ When generating final documents or handing work to another agent:
 When the consolidation hook fires (you'll see a block message listing consulted sources):
 
 1. **Review each source** — did it contain a passage that anchored your reasoning?
-2. **Highlight what mattered** — for key sources, call `cliproot_clip` with the specific passage that informed your thinking. You don't need to clip the whole document — just the sentence or paragraph that caught your attention.
-3. **Record syntheses** — if the hook identifies a file you wrote that drew from multiple sources, consider recording it with `cliproot_derive` to preserve the reasoning chain.
+2. **Highlight what mattered** — for key sources, call `cliproot_clip_create` with the specific passage that informed your thinking. You don't need to clip the whole document — just the sentence or paragraph that caught your attention.
+3. **Record syntheses** — if the hook identifies a file you wrote that drew from multiple sources, consider recording it with `cliproot_clip_derive` to preserve the reasoning chain.
 4. **Skip freely** — sources you consulted but didn't find useful don't need highlights. They'll still appear in the provenance graph as consulted-but-not-cited (lower confidence), and semantic enrichment can infer connections later.
 
-If no hooks are available (Cursor, Windsurf), call `cliproot_consolidate` periodically to check for unhighlighted sources.
+If no hooks are available (Cursor, Windsurf), call `cliproot_session_consolidate` periodically to check for unhighlighted sources.
 
 ## Tool Quick Reference
 
@@ -99,20 +99,20 @@ See [references/tool-reference.md](references/tool-reference.md) for detailed AP
 | `cliproot_session_end` | Finalize the session artifact | session_id |
 | `cliproot_activity_start` | Begin prompt-scoped work | activity_type, prompt, parameters |
 | `cliproot_activity_end` | Finalize activity lineage | activity_id |
-| `cliproot_clip` | Capture source text | url, quote, activity_id, session_id |
-| `cliproot_derive` | Create derived content | from, quote, transformation_type, activity_id |
-| `cliproot_inspect` | View full clip details | hash_or_id |
-| `cliproot_trace` | Show lineage | hash_or_id |
-| `cliproot_list` | List clips | document_id, source_type, project_id |
-| `cliproot_search` | Find clips by text | query |
-| `cliproot_verify` | Check integrity | hash_or_id (optional) |
-| `cliproot_annotate` | Add inline citations | document_text, style |
-| `cliproot_cite` | Generate bibliography | document_text |
-| `cliproot_doctor` | Audit provenance coverage | document_text |
+| `cliproot_clip_create` | Capture source text | url, quote, activity_id, session_id |
+| `cliproot_clip_derive` | Create derived content | from, quote, transformation_type, activity_id |
+| `cliproot_clip_get` | View full clip details | hash_or_id |
+| `cliproot_clip_trace` | Show lineage | hash_or_id |
+| `cliproot_clip_list` | List clips | document_id, source_type, project_id |
+| `cliproot_clip_search` | Find clips by text | query |
+| `cliproot_clip_verify` | Check integrity | hash_or_id (optional) |
+| `cliproot_doc_annotate` | Add inline citations | document_text, style |
+| `cliproot_doc_cite` | Generate bibliography | document_text |
+| `cliproot_doc_coverage` | Audit provenance coverage | document_text |
 | `cliproot_wiki_lint` | Lint the compiled wiki | structural_only, contradictions |
-| `cliproot_query` | Ask the wiki a question | prompt, file_back, top_k |
+| `cliproot_wiki_query` | Ask the wiki a question | prompt, file_back, top_k |
 | `cliproot_artifact_add` | Store a markdown/json/text artifact | path or content, artifact_type |
 | `cliproot_artifact_link` | Attach an artifact to a clip | clip_hash_or_id, artifact_hash |
 | `cliproot_pack_create` | Create a portable pack | project_id or roots, output_path |
 | `cliproot_pack_import` | Restore a pack | path |
-| `cliproot_export` | Export clip provenance lineage | hash_or_id |
+| `cliproot_bundle_export` | Export clip provenance lineage | hash_or_id |
