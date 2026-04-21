@@ -70,7 +70,9 @@ fn print_human(outcome: &query::QueryOutcome) {
                 println!("persisted: {}", p.display());
             }
         }
-        query::QueryOutcome::BudgetExceeded(r) => eprintln!("cliproot wiki query: BUDGET_EXCEEDED {r}"),
+        query::QueryOutcome::BudgetExceeded(r) => {
+            eprintln!("cliproot wiki query: BUDGET_EXCEEDED {r}")
+        }
         query::QueryOutcome::Skipped(r) => eprintln!("cliproot wiki query: SKIPPED {r}"),
         query::QueryOutcome::Error(e) => eprintln!("cliproot wiki query: ERROR {e}"),
     }

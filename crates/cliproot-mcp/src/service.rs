@@ -169,7 +169,7 @@ impl ClipRootService {
     #[tool(
         description = "Capture a source clip from a URL with exact quoted text. Returns the stored clip including its content-addressed hash for future reference."
     )]
-    async fn cliproot_clip(
+    async fn cliproot_clip_create(
         &self,
         Parameters(params): Parameters<ClipParams>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -259,7 +259,7 @@ impl ClipRootService {
     #[tool(
         description = "Derive a new clip from one or more parent clips. Creates derivation edges recording how the content was transformed. Returns the child clip with its hash."
     )]
-    async fn cliproot_derive(
+    async fn cliproot_clip_derive(
         &self,
         Parameters(params): Parameters<DeriveParams>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -661,7 +661,7 @@ impl ClipRootService {
     #[tool(
         description = "Inspect a clip by its hash (sha256-...) or ID. Returns full clip details including content, selectors, source refs, and hashes."
     )]
-    async fn cliproot_inspect(
+    async fn cliproot_clip_get(
         &self,
         Parameters(params): Parameters<InspectParams>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -684,7 +684,7 @@ impl ClipRootService {
     #[tool(
         description = "Show the full ancestor lineage of a clip through derivation edges. Returns an ordered list from direct parents to root ancestors, showing how content was derived."
     )]
-    async fn cliproot_trace(
+    async fn cliproot_clip_trace(
         &self,
         Parameters(params): Parameters<TraceParams>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -711,7 +711,7 @@ impl ClipRootService {
     #[tool(
         description = "Verify hash integrity of a clip (by hash or ID) or all clips if hash_or_id is omitted. Returns verification status and any errors found."
     )]
-    async fn cliproot_verify(
+    async fn cliproot_clip_verify(
         &self,
         Parameters(params): Parameters<VerifyParams>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -736,7 +736,7 @@ impl ClipRootService {
     #[tool(
         description = "List clips in the repository with optional filtering by document ID or source type. Returns an array of clip summaries with content previews."
     )]
-    async fn cliproot_list(
+    async fn cliproot_clip_list(
         &self,
         Parameters(params): Parameters<ListParams>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -775,7 +775,7 @@ impl ClipRootService {
     #[tool(
         description = "Search clips by text content using case-insensitive substring matching. Returns matching clips up to the specified limit."
     )]
-    async fn cliproot_search(
+    async fn cliproot_clip_search(
         &self,
         Parameters(params): Parameters<SearchParams>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -813,7 +813,7 @@ impl ClipRootService {
     #[tool(
         description = "Export a clip and its full provenance lineage as a CRP bundle. Useful for sharing or archiving provenance records."
     )]
-    async fn cliproot_export(
+    async fn cliproot_bundle_export(
         &self,
         Parameters(params): Parameters<ExportParams>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -829,7 +829,7 @@ impl ClipRootService {
     #[tool(
         description = "Annotate a document with inline citations by matching text against stored clips. Returns the annotated text with citation markers and a list of citations with source URLs."
     )]
-    async fn cliproot_annotate(
+    async fn cliproot_doc_annotate(
         &self,
         Parameters(params): Parameters<AnnotateParams>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -847,7 +847,7 @@ impl ClipRootService {
     #[tool(
         description = "Generate a bibliography/citation list for a document by matching text against stored clips. Returns numbered sources with URLs and titles."
     )]
-    async fn cliproot_cite(
+    async fn cliproot_doc_cite(
         &self,
         Parameters(params): Parameters<CiteParams>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -863,7 +863,7 @@ impl ClipRootService {
     #[tool(
         description = "Generate a provenance coverage report showing which paragraphs in a document have source provenance and which are missing it. Useful for auditing AI-generated content."
     )]
-    async fn cliproot_doctor(
+    async fn cliproot_doc_coverage(
         &self,
         Parameters(params): Parameters<DoctorParams>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -879,7 +879,7 @@ impl ClipRootService {
     #[tool(
         description = "Surface sources consulted during the session but not yet highlighted as clips. Returns candidate sources, files, and synthesis candidates for review. For agents without hook support (Cursor, Windsurf), call this periodically to check for unhighlighted sources."
     )]
-    async fn cliproot_consolidate(
+    async fn cliproot_session_consolidate(
         &self,
         Parameters(params): Parameters<ConsolidateParams>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -889,7 +889,8 @@ impl ClipRootService {
         }
         // Shell out to `cliproot session consolidate` to avoid circular crate dependency
         let mut cmd = std::process::Command::new("cliproot");
-        cmd.arg("session").arg("consolidate")
+        cmd.arg("session")
+            .arg("consolidate")
             .arg("--session")
             .arg(&session_id)
             .arg("--format")
@@ -955,7 +956,7 @@ impl ClipRootService {
     #[tool(
         description = "Answer a natural-language question using the compiled wiki. Two-phase retrieval: keyword extraction + answer synthesis with [cliproot:sha256-…] citations. Records a Research Activity."
     )]
-    async fn cliproot_query(
+    async fn cliproot_wiki_query(
         &self,
         Parameters(params): Parameters<QueryParams>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -963,7 +964,8 @@ impl ClipRootService {
             return Err(ErrorData::invalid_params("prompt is required", None));
         }
         let mut cmd = std::process::Command::new("cliproot");
-        cmd.arg("wiki").arg("query")
+        cmd.arg("wiki")
+            .arg("query")
             .arg(&params.prompt)
             .arg("--format")
             .arg("json")

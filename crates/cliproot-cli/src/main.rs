@@ -612,9 +612,7 @@ enum SessionCommands {
         metadata: Option<String>,
     },
     /// End an agent session
-    End {
-        session_id: String,
-    },
+    End { session_id: String },
     /// Reconstruct a design record from a session
     Record {
         /// Session ID (default: most recent)

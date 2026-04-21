@@ -28,7 +28,13 @@ pub fn run(
             .to_str()
             .ok_or("cliproot dir path is not valid UTF-8")?;
         background::spawn(
-            &["wiki", "compile", "--background-child", "--cliproot-dir", dir_str],
+            &[
+                "wiki",
+                "compile",
+                "--background-child",
+                "--cliproot-dir",
+                dir_str,
+            ],
             "cliproot-compile",
         )?;
         return Ok(());
