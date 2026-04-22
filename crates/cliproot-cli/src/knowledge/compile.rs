@@ -190,8 +190,15 @@ fn run_compile_inner(
     let article_bodies = read_selected_article_bodies(&knowledge_dir, &selected);
 
     // 6. Build + send the prompt.
+    let article_types = super::article_types::load_article_types(cliproot_dir);
     let system = compile_system_prompt();
-    let user = build_user_prompt(&daily_path, &daily_body, &existing_index, &article_bodies);
+    let user = build_user_prompt(
+        &daily_path,
+        &daily_body,
+        &existing_index,
+        &article_bodies,
+        &article_types,
+    );
     let result = llm_call(&system, &user, &cfg.models.compile, MAX_OUTPUT_TOKENS)?;
 
     // 7. Parse the response into per-file sections.
@@ -421,9 +428,12 @@ fn read_selected_article_bodies(
 // ── Prompt templates ──────────────────────────────────────────────────────────
 
 fn compile_system_prompt() -> String {
-    "You are a knowledge curator compiling durable wiki articles from a software \
-developer's daily work log.  Given today's daily digest plus any existing \
-articles that touch the same concepts, produce updated article bodies.\n\n\
+    "You are a knowledge curator compiling durable wiki articles from the \
+user's daily digest.  Given today's digest plus any existing articles that \
+touch the same topics, produce updated article bodies.\n\n\
+Use the user's own terminology — mirror the vocabulary already present in \
+their digests and existing articles.  Avoid importing domain-specific jargon \
+unless it appears in the source material.\n\n\
 Response format — STRICT:\n\
 For each article you create or update, emit exactly one section:\n\
 \n\
@@ -445,8 +455,15 @@ fn build_user_prompt(
     daily_body: &str,
     existing_index: &Index,
     article_bodies: &[(IndexEntry, String)],
+    article_types: &[String],
 ) -> String {
     let mut user = String::new();
+    if !article_types.is_empty() {
+        user.push_str(&format!(
+            "Known article types in the user's vocabulary: {}\n\n",
+            article_types.join(", ")
+        ));
+    }
     user.push_str(&format!(
         "Today's daily digest ({}):\n{daily_body}\n\n",
         daily_path.display()

@@ -240,7 +240,7 @@ Output: [\"oauth\", \"pkce\", \"auth flow\"]"
 }
 
 fn phase2_system_prompt() -> String {
-    "You answer a developer's question using the provided wiki articles.  \
+    "You answer the user's question using the provided wiki articles.  \
 When you state a fact or make a claim, cite the supporting source using \
 `[cliproot:sha256-<full-hash>]` inline — prefer citations over `[[wikilinks]]`.  \
 Copy citation hashes verbatim from the article bodies.  If the articles do not \

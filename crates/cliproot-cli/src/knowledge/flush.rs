@@ -7,6 +7,7 @@ use cliproot_core::model::{
 use cliproot_store::Repository;
 
 use super::article;
+use super::article_types;
 use super::llm;
 use super::state::{self, FlushState};
 
@@ -88,8 +89,9 @@ fn run_flush_inner(
 
     // ── Build LLM prompt ──────────────────────────────────────────────────
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let article_types = article_types::load_article_types(cliproot_dir);
     let system = flush_system_prompt();
-    let user = build_user_prompt(&today, &new_lines);
+    let user = build_user_prompt(&today, &new_lines, &article_types);
 
     // ── Call Anthropic API ────────────────────────────────────────────────
     let model = &cfg.models.flush;
@@ -324,24 +326,36 @@ fn update_state_watermarks(flush_state: &mut FlushState, log_dir: &Path) {
 // ── Prompt templates ──────────────────────────────────────────────────────────
 
 fn flush_system_prompt() -> String {
-    "You are a knowledge curator for a software development session. \
-Given the raw tool call log from today's AI-assisted coding work, write a concise daily digest.\n\n\
-Format your response as Markdown with these sections:\n\
+    "You are a knowledge curator reviewing a record of the user's activity — \
+web pages read, files touched, notes written, tools invoked. Produce a concise \
+daily digest in Markdown with these sections:\n\n\
 ## Summary\n\
-One paragraph: what was worked on today.\n\n\
+One paragraph describing what the user worked on today.\n\n\
 ## Key Decisions\n\
-Bullet list of significant technical decisions made.\n\n\
+Bullet list of significant decisions, choices, or conclusions reached.\n\n\
 ## Sources Consulted\n\
-Bullet list of URLs, files, or documents referenced (from WebFetch and Read calls).\n\n\
+Bullet list of URLs, files, or documents referenced.\n\n\
 ## Open Questions\n\
-Any unresolved issues or threads to pick up next session.\n\n\
-Be factual. Do not invent details not present in the log. Omit sections with no content."
+Unresolved issues or threads to pick up next session.\n\n\
+Use the user's own terminology — mirror the words they use in their notes and \
+messages. Do not import domain jargon (e.g. software, legal, medical terms) \
+unless that jargon is already present in the source material. Be factual; do \
+not invent details not present in the record. Omit sections with no content."
         .to_string()
 }
 
-fn build_user_prompt(date: &str, lines: &[String]) -> String {
+fn build_user_prompt(date: &str, lines: &[String], article_types: &[String]) -> String {
     let log_text = lines.join("\n");
-    format!("Today's date: {date}\n\nSession log (tool calls):\n{log_text}")
+    let mut out = format!("Today's date: {date}\n\n");
+    if !article_types.is_empty() {
+        out.push_str(&format!(
+            "Known article types in the user's vocabulary: {}\n\n",
+            article_types.join(", ")
+        ));
+    }
+    out.push_str("Activity record:\n");
+    out.push_str(&log_text);
+    out
 }
 
 // ── Log file helper ───────────────────────────────────────────────────────────
