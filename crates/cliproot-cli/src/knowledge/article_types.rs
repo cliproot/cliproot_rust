@@ -77,7 +77,14 @@ mod tests {
         let types = load_article_types(dir.path());
         assert_eq!(
             types,
-            vec!["concept", "decision", "issue", "reference", "garden", "recipe"]
+            vec![
+                "concept",
+                "decision",
+                "issue",
+                "reference",
+                "garden",
+                "recipe"
+            ]
         );
     }
 
