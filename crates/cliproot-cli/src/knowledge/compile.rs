@@ -1196,6 +1196,77 @@ mod tests {
     }
 
     #[test]
+    fn compile_idempotent_with_rendering() {
+        // §7.2.11: a citation-bearing daily body; rendered footnotes in the
+        // written article must not shift the corpus hash between runs.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = cliproot_store::Repository::init(dir.path()).unwrap();
+        let cliproot_dir = dir.path().join(".cliproot");
+        let knowledge_dir = cliproot_dir.join("knowledge");
+
+        let mut cfg = repo.knowledge_config().unwrap();
+        cfg.level = cliproot_store::KnowledgeLevel::Wiki;
+        repo.set_knowledge_config(cfg).unwrap();
+
+        article::write_daily_digest(
+            &knowledge_dir,
+            "2026-04-13",
+            "## Summary\nWorked on PKCE with citations.",
+            None,
+        )
+        .unwrap();
+
+        // Body contains a citation token; the clip is not in the store so it
+        // renders as a placeholder — the important property is stability.
+        let citation_hash = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let mock = move |_: &str, _: &str, model: &str, _: u32| {
+            Ok(llm::LlmCallResult {
+                text: format!(
+                    "### FILE: concepts/pkce-flow.md\n\
+                     TITLE: PKCE Flow\n\
+                     TAGS: oauth\n\
+                     BODY:\n\
+                     PKCE body. [cliproot:{citation_hash}]\n"
+                ),
+                input_tokens: 100,
+                output_tokens: 50,
+                total_tokens: 150,
+                estimated_cost_usd: 0.001,
+                model: model.to_string(),
+                prompt_hash: "testhash".to_string(),
+            })
+        };
+
+        let first = run_compile_with_llm(&cliproot_dir, &repo, CompileTrigger::Manual, &mock);
+        assert!(
+            matches!(first, CompileOutcome::Success { .. }),
+            "first run should succeed: {first:?}"
+        );
+
+        // Verify citation was rendered into the written article.
+        let article_path = knowledge_dir.join("concepts/pkce-flow.md");
+        let content = fs::read_to_string(&article_path).unwrap();
+        assert!(
+            content.contains("data-crp-hash"),
+            "article should contain rendered citation span after first run"
+        );
+
+        let mock_fail = |_: &str,
+                         _: &str,
+                         _: &str,
+                         _: u32|
+         -> Result<llm::LlmCallResult, Box<dyn std::error::Error>> {
+            Err("LLM must not be called on an idempotent second compile".into())
+        };
+        let second =
+            run_compile_with_llm(&cliproot_dir, &repo, CompileTrigger::Manual, &mock_fail);
+        match second {
+            CompileOutcome::Skipped(r) => assert!(r.contains("no changes")),
+            other => panic!("expected Skipped on second run after citation render, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn compile_writes_article_and_index() {
         let dir = tempfile::tempdir().unwrap();
         let repo = cliproot_store::Repository::init(dir.path()).unwrap();
