@@ -192,47 +192,11 @@ fn read_bounded(path: &Path, cap_bytes: u64) -> Option<String> {
 }
 
 fn read_index_excerpt(knowledge_dir: &Path, budget_chars: usize) -> Option<String> {
+    // v2 index is recency-first; read_bounded + build_context's char-cap
+    // together ensure the most useful content survives any truncation.
     let cap = (budget_chars as u64).saturating_mul(2);
     let raw = read_bounded(&knowledge_dir.join("index.md"), cap)?;
-    // Keep frontmatter + header row + up to N body rows.  We cap lines rather
-    // than re-parsing the table.
-    let mut out = String::new();
-    let mut rows = 0usize;
-    let mut saw_header = false;
-    let mut saw_separator = false;
-    for line in raw.lines() {
-        if !line.trim_start().starts_with('|') {
-            out.push_str(line);
-            out.push('\n');
-            continue;
-        }
-        // Table line.
-        if !saw_header {
-            out.push_str(line);
-            out.push('\n');
-            if line.contains("concept") && line.contains("uuid") {
-                saw_header = true;
-            }
-            continue;
-        }
-        if !saw_separator {
-            out.push_str(line);
-            out.push('\n');
-            if line.contains("---") {
-                saw_separator = true;
-            }
-            continue;
-        }
-        // Real data row.
-        if rows >= 40 {
-            out.push_str("... (truncated)\n");
-            break;
-        }
-        out.push_str(line);
-        out.push('\n');
-        rows += 1;
-    }
-    Some(out)
+    Some(raw)
 }
 
 fn read_daily_headings(knowledge_dir: &Path, budget_chars: usize) -> Option<String> {
@@ -327,18 +291,19 @@ mod tests {
     }
 
     #[test]
-    fn read_index_excerpt_respects_row_cap() {
+    fn read_index_excerpt_returns_raw_content() {
         let dir = tempfile::tempdir().unwrap();
         let kd = dir.path().to_path_buf();
-        let mut body = String::from("---\nschemaVersion: 1\n---\n\n# Wiki index\n\n");
-        body.push_str("| concept | uuid | type | tags | last_seen |\n");
-        body.push_str("|---|---|---|---|---|\n");
-        for i in 0..80 {
-            body.push_str(&format!("| T{i} | u{i} | concept | | 2026-04-13 |\n"));
-        }
+        let body = "---\nschemaVersion: 2\ngeneratedAt: 2026-04-25T00:00:00Z\narticleCount: 1\n---\n\n\
+            # Wiki Index\n\n1 article · 1 concept · last compile 2026-04-25\n\n\
+            ## Recently updated\n\n\
+            - [PKCE Flow](concepts/pkce-flow.md) — concept · 2026-04-25\n\n\
+            ## Concepts\n\n\
+            - [PKCE Flow](concepts/pkce-flow.md) · 2026-04-25\n";
         std::fs::write(kd.join("index.md"), body).unwrap();
         let out = read_index_excerpt(&kd, 5_000).unwrap();
-        assert!(out.contains("(truncated)"));
+        assert!(out.contains("## Recently updated"), "v2 content returned as-is: {out}");
+        assert!(out.contains("PKCE Flow"), "article link present: {out}");
     }
 
     #[test]
