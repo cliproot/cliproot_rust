@@ -755,6 +755,26 @@ impl Repository {
         Ok(!sources.is_empty())
     }
 
+    /// Look up a source record by its ID, including `created_at`.
+    pub fn get_source_record(
+        &self,
+        source_id: &str,
+    ) -> Result<Option<cliproot_core::SourceRecord>, StoreError> {
+        let Some(row) = self.index.get_source_by_id(source_id)? else {
+            return Ok(None);
+        };
+        Ok(Some(cliproot_core::SourceRecord {
+            id: cliproot_core::CrpId(row.id),
+            source_type: serde_json::from_value(serde_json::Value::String(row.source_type))
+                .unwrap_or(cliproot_core::SourceType::Unknown),
+            digital_source_type: None,
+            title: row.title,
+            source_uri: row.source_uri,
+            author_agent_id: None,
+            created_at: row.created_at,
+        }))
+    }
+
     pub fn trace(&self, hash_or_id: &str) -> Result<Vec<LineageNode>, StoreError> {
         let clip_hash = self
             .resolve_clip_hash(hash_or_id)?
