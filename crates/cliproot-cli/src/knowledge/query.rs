@@ -157,6 +157,7 @@ fn run_query_inner(
             &slug,
             prompt,
             &format!("## Question\n\n{prompt}\n\n## Answer\n\n{answer_text}"),
+            &[],
             &consulted,
             &cited_clips,
             None,
@@ -407,6 +408,7 @@ mod tests {
             "PKCE Flow",
             "PKCE prevents code-interception attacks in OAuth public clients. \
              See [cliproot:sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa].",
+            &[],
             &[],
             &["sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()],
             None,

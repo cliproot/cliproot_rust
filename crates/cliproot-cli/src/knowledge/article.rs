@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 /// Kind of article stored under `.cliproot/knowledge/`.  The compile pipeline
 /// (Phase D) writes concept, connection, and qa articles; the flush pipeline
 /// (Phase C) writes daily-digest articles.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[allow(dead_code)]
 pub enum ArticleType {
     Concept,
@@ -113,6 +113,37 @@ pub fn read_content_hash_from_file(path: &Path) -> Option<String> {
     parse_frontmatter_field(&content, "contentHash")
 }
 
+/// Read the `tags:` inline YAML list from an existing article's frontmatter.
+/// Returns an empty vec if the file is missing, has no frontmatter, or has no
+/// `tags:` field.
+pub fn read_tags_from_file(path: &Path) -> Vec<String> {
+    let Ok(content) = fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let Some(raw) = parse_frontmatter_field(&content, "tags") else {
+        return Vec::new();
+    };
+    parse_yaml_inline_list(&raw)
+}
+
+fn parse_yaml_inline_list(raw: &str) -> Vec<String> {
+    let trimmed = raw.trim();
+    let inner = trimmed
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'));
+    let Some(inner) = inner else {
+        return Vec::new();
+    };
+    if inner.trim().is_empty() {
+        return Vec::new();
+    }
+    inner
+        .split(',')
+        .map(|s| s.trim().trim_matches('"').to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn new_uuid() -> String {
@@ -155,6 +186,7 @@ pub fn write_article(
     slug: &str,
     title: &str,
     body: &str,
+    tags: &[String],
     sources: &[String],
     clip_hashes: &[String],
     canonical_key_override: Option<&str>,
@@ -180,6 +212,7 @@ pub fn write_article(
 
     let content_hash = sha256_base64url(body.as_bytes());
 
+    let tags_inline = format_yaml_inline_list(tags);
     let sources_inline = format_yaml_inline_list(sources);
     let clip_hashes_inline = format_yaml_inline_list(clip_hashes);
 
@@ -190,6 +223,7 @@ pub fn write_article(
          contentHash: sha256-{content_hash}\n\
          title: \"{title_escaped}\"\n\
          articleType: {article_type_slug}\n\
+         tags: {tags_inline}\n\
          sources: {sources_inline}\n\
          clipHashes: {clip_hashes_inline}\n\
          ---\n",
@@ -232,22 +266,31 @@ pub fn canonical_key_from_title(title: &str) -> String {
     out
 }
 
-/// Scan markdown body text for inline citations of the form
-/// `[cliproot:sha256-<hash>]` and return the unique list of full clip hashes
-/// (including the `sha256-` prefix), preserving first-seen order.
+/// Scan markdown body text for inline citations and return the unique list of
+/// full clip hashes (including the `sha256-` prefix), preserving first-seen
+/// order.
+///
+/// Accepts two shapes:
+/// - Legacy bracket form: `[cliproot:sha256-<hash>]`
+/// - Rendered span form: `<span data-crp-hash="sha256-<hash>"></span>`
 ///
 /// Only accepts hashes of ≥ 40 base64url characters after the `sha256-`
-/// prefix — shorter values are noise.  No regex dep; hand-rolled scanner for
-/// parity with `flush::extract_clip_hashes_from_line`.
+/// prefix — shorter values are noise.
 pub fn extract_citations_from_markdown(body: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    push_unique_from_bracket_tokens(body, &mut out);
+    push_unique_from_data_attr(body, &mut out);
+    out
+}
+
+fn push_unique_from_bracket_tokens(body: &str, out: &mut Vec<String>) {
     const OPEN: &str = "[cliproot:sha256-";
     let bytes = body.as_bytes();
     let open_len = OPEN.len();
-    let mut out: Vec<String> = Vec::new();
     let mut i: usize = 0;
     while i + open_len <= bytes.len() {
         if &bytes[i..i + open_len] == OPEN.as_bytes() {
-            let hash_start = i + "[cliproot:".len(); // points at 's' of "sha256-"
+            let hash_start = i + "[cliproot:".len();
             let mut j = hash_start;
             while j < bytes.len() {
                 let b = bytes[j];
@@ -275,7 +318,47 @@ pub fn extract_citations_from_markdown(body: &str) -> Vec<String> {
             i += 1;
         }
     }
-    out
+}
+
+fn push_unique_from_data_attr(body: &str, out: &mut Vec<String>) {
+    // Match: data-crp-hash="sha256-<hash>"
+    // After the literal prefix, hash_start points at 's' of "sha256-".
+    const ATTR_PREFIX: &str = "data-crp-hash=\"sha256-";
+    // "data-crp-hash=\"" is 15 bytes in the actual string (the \" is one char).
+    const HASH_OFFSET: usize = 15; // offset of 's' in "sha256-" from start of ATTR_PREFIX
+    let bytes = body.as_bytes();
+    let attr_len = ATTR_PREFIX.len();
+    let mut i: usize = 0;
+    while i + attr_len <= bytes.len() {
+        if &bytes[i..i + attr_len] == ATTR_PREFIX.as_bytes() {
+            let hash_start = i + HASH_OFFSET;
+            let mut j = hash_start;
+            while j < bytes.len() {
+                let b = bytes[j];
+                if b.is_ascii_alphanumeric() || b == b'-' || b == b'_' {
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+            if j < bytes.len() && bytes[j] == b'"' {
+                let raw = &body[hash_start..j];
+                if let Some(after_prefix) = raw.strip_prefix("sha256-") {
+                    if after_prefix.len() >= 40 {
+                        let full = raw.to_string();
+                        if !out.contains(&full) {
+                            out.push(full);
+                        }
+                    }
+                }
+                i = j + 1;
+                continue;
+            }
+            i += 1;
+        } else {
+            i += 1;
+        }
+    }
 }
 
 fn uuidv5_from_canonical_key(canonical_key: &str) -> String {
@@ -424,6 +507,7 @@ mod tests {
             "pkce-flow",
             "PKCE Flow",
             "Body with [cliproot:sha256-abcdefghijabcdefghijabcdefghijabcdefghij].",
+            &["oauth".to_string(), "pkce".to_string()],
             &["daily/2026-04-13.md".to_string()],
             &["sha256-abcdefghijabcdefghijabcdefghijabcdefghij".to_string()],
             None,
@@ -434,6 +518,7 @@ mod tests {
         assert!(content.starts_with("---\n"));
         assert!(content.contains("articleType: concept"));
         assert!(content.contains("canonicalKey: pkce-flow"));
+        assert!(content.contains("tags: [\"oauth\", \"pkce\"]"));
         assert!(content.contains("sources: [\"daily/2026-04-13.md\"]"));
         assert!(content.contains("clipHashes: [\"sha256-"));
         assert!(content.contains("contentHash: sha256-"));
@@ -452,6 +537,7 @@ mod tests {
             "first body",
             &[],
             &[],
+            &[],
             None,
         )
         .unwrap();
@@ -461,6 +547,7 @@ mod tests {
             "pkce-flow",
             "PKCE Flow",
             "second body, rewritten",
+            &[],
             &[],
             &[],
             None,
@@ -482,6 +569,7 @@ mod tests {
             "body",
             &[],
             &[],
+            &[],
             None,
         )
         .unwrap();
@@ -499,6 +587,7 @@ mod tests {
             "unused",
             "Index",
             "body",
+            &[],
             &[],
             &[],
             None,
@@ -553,5 +642,96 @@ mod tests {
         let body = format!("First [cliproot:{h1}] then [cliproot:{h2}] end.");
         let got = extract_citations_from_markdown(&body);
         assert_eq!(got, vec![h1.to_string(), h2.to_string()]);
+    }
+
+    // ── §7.1 tests ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn write_article_persists_tags_in_frontmatter() {
+        let dir = tempfile::tempdir().unwrap();
+        let res = write_article(
+            dir.path(),
+            ArticleType::Concept,
+            "pkce-flow",
+            "PKCE Flow",
+            "body",
+            &["oauth".to_string(), "pkce".to_string()],
+            &[],
+            &[],
+            None,
+        )
+        .unwrap();
+        let tags = read_tags_from_file(&res.path);
+        assert_eq!(tags, vec!["oauth".to_string(), "pkce".to_string()]);
+    }
+
+    #[test]
+    fn read_tags_from_file_returns_empty_for_legacy_no_tags_field() {
+        let dir = tempfile::tempdir().unwrap();
+        // Write an article with empty tags.
+        let res = write_article(
+            dir.path(),
+            ArticleType::Concept,
+            "pkce-flow",
+            "PKCE Flow",
+            "body",
+            &[],
+            &[],
+            &[],
+            None,
+        )
+        .unwrap();
+        // Rewrite the file without a tags field to simulate a legacy article.
+        let content = fs::read_to_string(&res.path).unwrap();
+        let without_tags = content
+            .lines()
+            .filter(|l| !l.starts_with("tags:"))
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        fs::write(&res.path, without_tags).unwrap();
+        let tags = read_tags_from_file(&res.path);
+        assert!(tags.is_empty());
+    }
+
+    #[test]
+    fn extract_citations_finds_data_crp_hash_span() {
+        let hash = "sha256-abcdefghijabcdefghijabcdefghijabcdefghij";
+        let body = format!(
+            r#"Text [^cr-abcdefgh]<span data-crp-hash="{hash}"></span>."#
+        );
+        let got = extract_citations_from_markdown(&body);
+        assert_eq!(got, vec![hash.to_string()]);
+    }
+
+    #[test]
+    fn extract_citations_handles_mixed_bracket_and_span() {
+        let h1 = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let h2 = "sha256-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let body = format!(
+            r#"A [cliproot:{h1}] B [^cr-bbbbbbbb]<span data-crp-hash="{h2}"></span>."#
+        );
+        let got = extract_citations_from_markdown(&body);
+        assert_eq!(got, vec![h1.to_string(), h2.to_string()]);
+    }
+
+    #[test]
+    fn extract_citations_handles_mixed_dedupes_cross_format() {
+        let h = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        // Same hash appears as both a bracket token and a span.
+        let body = format!(
+            r#"A [cliproot:{h}] B [^cr-aaaaaaaa]<span data-crp-hash="{h}"></span>."#
+        );
+        let got = extract_citations_from_markdown(&body);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0], h.to_string());
+    }
+
+    #[test]
+    fn extract_citations_rejects_short_data_crp_hash() {
+        // Hash body after "sha256-" is only 8 chars — below the 40-char gate.
+        let body = r#"<span data-crp-hash="sha256-tooshort"></span>"#;
+        let got = extract_citations_from_markdown(body);
+        assert!(got.is_empty());
     }
 }

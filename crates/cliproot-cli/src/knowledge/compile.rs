@@ -229,6 +229,7 @@ fn run_compile_inner(
             &slug,
             &section.title,
             &section.body,
+            &section.tags,
             &[daily_source_ref.clone()],
             &section.clip_hashes_from_body(),
             None,
@@ -503,7 +504,6 @@ fn build_user_prompt(
 struct CompileSection {
     header: String, // the `### FILE: ...` line content, sans prefix
     title: String,
-    #[allow(dead_code)]
     tags: Vec<String>,
     body: String,
 }
@@ -839,6 +839,7 @@ mod tests {
             "pkce",
             "PKCE",
             "body",
+            &[],
             &[],
             &[],
             None,
