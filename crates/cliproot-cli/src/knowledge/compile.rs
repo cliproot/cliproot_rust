@@ -39,6 +39,218 @@ use super::index::{self, Index, IndexEntry};
 use super::llm;
 use super::state;
 
+// ── Citation resolver ─────────────────────────────────────────────────────────
+
+struct ResolvedSource {
+    title: Option<String>,
+    source_uri: Option<String>,
+    source_type: cliproot_core::SourceType,
+    created_at: Option<String>,
+    session_prompt: Option<String>,
+}
+
+trait CitationResolver {
+    fn resolve(&self, clip_hash: &str) -> Option<ResolvedSource>;
+}
+
+struct RepoResolver<'a> {
+    repo: &'a Repository,
+}
+
+impl<'a> CitationResolver for RepoResolver<'a> {
+    fn resolve(&self, clip_hash: &str) -> Option<ResolvedSource> {
+        let clip = self.repo.get_clip_full(clip_hash).ok().flatten()?;
+        let primary = clip.source_refs.first()?;
+        let src = self.repo.get_source_record(primary).ok().flatten()?;
+        Some(ResolvedSource {
+            title: src.title,
+            source_uri: src.source_uri,
+            source_type: src.source_type,
+            created_at: src.created_at.and_then(|s| s.get(..10).map(str::to_string)),
+            session_prompt: None,
+        })
+    }
+}
+
+// ── Citation rendering ────────────────────────────────────────────────────────
+
+fn find_bracket_tokens(body: &str) -> Vec<(usize, usize, String)> {
+    const OPEN: &str = "[cliproot:sha256-";
+    let bytes = body.as_bytes();
+    let open_len = OPEN.len();
+    let mut out: Vec<(usize, usize, String)> = Vec::new();
+    let mut i: usize = 0;
+    while i + open_len <= bytes.len() {
+        if &bytes[i..i + open_len] == OPEN.as_bytes() {
+            let hash_start = i + "[cliproot:".len();
+            let mut j = hash_start;
+            while j < bytes.len() {
+                let b = bytes[j];
+                if b.is_ascii_alphanumeric() || b == b'-' || b == b'_' {
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+            if j < bytes.len() && bytes[j] == b']' {
+                let raw = &body[hash_start..j];
+                if let Some(after_prefix) = raw.strip_prefix("sha256-") {
+                    if after_prefix.len() >= 40 {
+                        out.push((i, j + 1, raw.to_string()));
+                        i = j + 1;
+                        continue;
+                    }
+                }
+            }
+            i += 1;
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+fn assign_short_hashes(unique_hashes: &[String]) -> Vec<String> {
+    let mut lengths = vec![8usize; unique_hashes.len()];
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for i in 0..unique_hashes.len() {
+            for j in (i + 1)..unique_hashes.len() {
+                let si = hash_prefix_chars(&unique_hashes[i], lengths[i]);
+                let sj = hash_prefix_chars(&unique_hashes[j], lengths[j]);
+                if si == sj {
+                    let max_i = hash_body_len(&unique_hashes[i]);
+                    let max_j = hash_body_len(&unique_hashes[j]);
+                    lengths[i] = (lengths[i] + 2).min(max_i);
+                    lengths[j] = (lengths[j] + 2).min(max_j);
+                    changed = true;
+                }
+            }
+        }
+    }
+    unique_hashes
+        .iter()
+        .enumerate()
+        .map(|(i, h)| hash_prefix_chars(h, lengths[i]).to_string())
+        .collect()
+}
+
+fn hash_prefix_chars(full: &str, len: usize) -> &str {
+    let after = full.strip_prefix("sha256-").unwrap_or("");
+    &after[..len.min(after.len())]
+}
+
+fn hash_body_len(full: &str) -> usize {
+    full.strip_prefix("sha256-")
+        .map(|s| s.len())
+        .unwrap_or(0)
+}
+
+fn escape_md_in_title(s: &str) -> String {
+    s.replace('*', "\\*")
+        .replace('[', "\\[")
+        .replace(']', "\\]")
+}
+
+fn uri_host(uri: &str) -> &str {
+    let after_scheme = uri.split("://").nth(1).unwrap_or(uri);
+    after_scheme.split('/').next().unwrap_or(after_scheme)
+}
+
+fn render_source_footnote(footnote_id: &str, src: &ResolvedSource) -> String {
+    let date_suffix = src
+        .created_at
+        .as_deref()
+        .map(|d| format!(" Captured {d}."))
+        .unwrap_or_default();
+    let uri = src.source_uri.as_deref().unwrap_or("");
+
+    if uri.starts_with("http://") || uri.starts_with("https://") {
+        let title = src
+            .title
+            .as_deref()
+            .map(|t| escape_md_in_title(t))
+            .unwrap_or_else(|| uri_host(uri).to_string());
+        format!("[^{footnote_id}]: *{title}* — <{uri}>.{date_suffix}")
+    } else if uri.starts_with("cliproot://session/") {
+        let title = src.title.as_deref().unwrap_or("Session");
+        let prompt = src.session_prompt.as_deref().unwrap_or("");
+        format!(
+            "[^{footnote_id}]: {title} — session transcript. Prompt: \"{prompt}\".{date_suffix}"
+        )
+    } else if uri.starts_with("file://") || (!uri.is_empty() && !uri.contains("://")) {
+        let title = escape_md_in_title(src.title.as_deref().unwrap_or("Workspace note"));
+        format!("[^{footnote_id}]: [[{title}]] — workspace note.{date_suffix}")
+    } else {
+        let display = src
+            .title
+            .as_deref()
+            .or(src.source_uri.as_deref())
+            .unwrap_or("Unknown source");
+        format!("[^{footnote_id}]: {display}.{date_suffix}")
+    }
+}
+
+/// Replace `[cliproot:sha256-<hash>]` tokens in `body` with footnote markers
+/// and rendered `<span data-crp-hash>` anchors, then append a `## Sources`
+/// section.  Returns (rendered_body, vec_of_unresolved_short_hashes).
+fn render_section_citations(
+    body: &str,
+    resolver: &dyn CitationResolver,
+) -> (String, Vec<String>) {
+    let tokens = find_bracket_tokens(body);
+    if tokens.is_empty() {
+        return (body.to_string(), Vec::new());
+    }
+
+    let mut unique_hashes: Vec<String> = Vec::new();
+    for (_, _, hash) in &tokens {
+        if !unique_hashes.contains(hash) {
+            unique_hashes.push(hash.clone());
+        }
+    }
+
+    let short_hashes = assign_short_hashes(&unique_hashes);
+
+    // Build rendered body by replacing tokens.
+    let mut output = String::with_capacity(body.len() + 512);
+    let mut pos = 0;
+    for (start, end, hash) in &tokens {
+        output.push_str(&body[pos..*start]);
+        let idx = unique_hashes.iter().position(|h| h == hash).unwrap_or(0);
+        let short = &short_hashes[idx];
+        output.push_str(&format!(
+            "[^cr-{short}]<span data-crp-hash=\"{hash}\"></span>"
+        ));
+        pos = *end;
+    }
+    output.push_str(&body[pos..]);
+
+    // Append Sources section.
+    output.push_str("\n\n## Sources\n\n");
+    let mut unresolved_shorts: Vec<String> = Vec::new();
+
+    for (i, hash) in unique_hashes.iter().enumerate() {
+        let short = &short_hashes[i];
+        let footnote_id = format!("cr-{short}");
+        match resolver.resolve(hash) {
+            Some(src) => {
+                output.push_str(&render_source_footnote(&footnote_id, &src));
+                output.push('\n');
+            }
+            None => {
+                output.push_str(&format!(
+                    "[^{footnote_id}]: *Unresolved clip* `sha256-{short}\u{2026}` (no source record found).\n"
+                ));
+                unresolved_shorts.push(short.clone());
+            }
+        }
+    }
+
+    (output, unresolved_shorts)
+}
+
 // ── Outcome + trigger ─────────────────────────────────────────────────────────
 
 /// Why the compile ran.  Affects only the time-of-day gate — all other
@@ -218,17 +430,33 @@ fn run_compile_inner(
     let mut written: Vec<ArticleWriteResult> = Vec::new();
     let mut all_linked_clip_hashes: Vec<String> = Vec::new();
     let daily_source_ref = relative_daily_source(&daily_path);
+    let resolver = RepoResolver { repo };
 
     for section in &sections {
         let Some((article_type, slug)) = parse_file_header(&section.header) else {
             continue;
         };
+
+        // Render citations: replace [cliproot:sha256-...] with footnote
+        // markers + data-crp-hash spans, then append a ## Sources section.
+        let (rendered_body, unresolved) =
+            render_section_citations(&section.body, &resolver);
+        for short in &unresolved {
+            append_log_line(
+                &knowledge_dir,
+                &format!(
+                    "UNRESOLVED clip=sha256-{short}\u{2026} article={}/{slug}.md",
+                    article_type.subdir().unwrap_or("?")
+                ),
+            );
+        }
+
         let write_res = article::write_article(
             &knowledge_dir,
             article_type,
             &slug,
             &section.title,
-            &section.body,
+            &rendered_body,
             &section.tags,
             &[daily_source_ref.clone()],
             &section.clip_hashes_from_body(),
@@ -678,6 +906,8 @@ fn record_compile_activity(
             "inputTokens": result.input_tokens,
             "outputTokens": result.output_tokens,
             "articlesWritten": written.len(),
+            "renderedCitations": true,
+            "indexSchemaVersion": 2,
         })),
         used_source_refs: used_clip_hashes.to_vec(),
         generated_clip_refs: Vec::new(),
@@ -1073,5 +1303,140 @@ mod tests {
         assert!(matches!(outcome, CompileOutcome::BudgetExceeded(_)));
         let log = fs::read_to_string(knowledge_dir.join("log.md")).unwrap();
         assert!(log.contains("BUDGET_EXCEEDED"));
+    }
+
+    // ── §7.2 tests 1–8: render_section_citations ─────────────────────────────
+
+    struct StubResolver(Option<ResolvedSource>);
+
+    impl CitationResolver for StubResolver {
+        fn resolve(&self, _: &str) -> Option<ResolvedSource> {
+            self.0.as_ref().map(|src| ResolvedSource {
+                title: src.title.clone(),
+                source_uri: src.source_uri.clone(),
+                source_type: src.source_type.clone(),
+                created_at: src.created_at.clone(),
+                session_prompt: src.session_prompt.clone(),
+            })
+        }
+    }
+
+    fn http_source(title: &str, url: &str) -> ResolvedSource {
+        ResolvedSource {
+            title: Some(title.to_string()),
+            source_uri: Some(url.to_string()),
+            source_type: cliproot_core::SourceType::ExternalQuoted,
+            created_at: Some("2026-04-18".to_string()),
+            session_prompt: None,
+        }
+    }
+
+    #[test]
+    fn render_section_citations_replaces_single_token() {
+        let h = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let body = format!("PKCE [cliproot:{h}].");
+        let resolver = StubResolver(Some(http_source("Paper", "https://example.com")));
+        let (rendered, unresolved) = render_section_citations(&body, &resolver);
+        assert!(unresolved.is_empty());
+        assert!(rendered.contains("[^cr-aaaaaaaa]<span data-crp-hash=\"sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\">"));
+        assert!(rendered.contains("## Sources"));
+        assert!(rendered.contains("[^cr-aaaaaaaa]: *Paper* — <https://example.com>."));
+        // dot after the span is preserved
+        assert!(rendered.contains("[^cr-aaaaaaaa]<span data-crp-hash=\"sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"></span>."));
+    }
+
+    #[test]
+    fn render_section_citations_dedupes_repeated_clip() {
+        let h = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let body = format!("A [cliproot:{h}] B [cliproot:{h}].");
+        let resolver = StubResolver(Some(http_source("Paper", "https://example.com")));
+        let (rendered, _) = render_section_citations(&body, &resolver);
+        // Two inline markers sharing the same footnote id.
+        assert_eq!(rendered.matches("[^cr-aaaaaaaa]<span").count(), 2);
+        // Only one footnote definition.
+        assert_eq!(rendered.matches("[^cr-aaaaaaaa]:").count(), 1);
+    }
+
+    #[test]
+    fn render_section_citations_resolves_collisions_to_10_chars() {
+        // Two hashes sharing an 8-char prefix.
+        let h1 = "sha256-aaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let h2 = "sha256-aaaaaaaacccccccccccccccccccccccccccccccc";
+        let body = format!("A [cliproot:{h1}] B [cliproot:{h2}].");
+        struct TwoSourceResolver;
+        impl CitationResolver for TwoSourceResolver {
+            fn resolve(&self, hash: &str) -> Option<ResolvedSource> {
+                Some(http_source(hash, "https://example.com"))
+            }
+        }
+        let (rendered, _) = render_section_citations(&body, &TwoSourceResolver);
+        // Both should have been bumped to 10 chars.
+        assert!(rendered.contains("[^cr-aaaaaaaabb]"), "h1 short={}", &h1[7..17]);
+        assert!(rendered.contains("[^cr-aaaaaaaacc]"), "h2 short={}", &h2[7..17]);
+    }
+
+    #[test]
+    fn render_section_citations_unresolved_clip_emits_placeholder() {
+        let h = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let body = format!("Claim [cliproot:{h}].");
+        let resolver = StubResolver(None);
+        let (rendered, unresolved) = render_section_citations(&body, &resolver);
+        assert_eq!(unresolved.len(), 1);
+        assert!(rendered.contains("Unresolved clip"), "rendered: {rendered}");
+    }
+
+    #[test]
+    fn render_section_citations_session_source() {
+        let h = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let body = format!("From session [cliproot:{h}].");
+        let resolver = StubResolver(Some(ResolvedSource {
+            title: Some("Chat".to_string()),
+            source_uri: Some("cliproot://session/abc".to_string()),
+            source_type: cliproot_core::SourceType::AiGenerated,
+            created_at: Some("2026-04-18".to_string()),
+            session_prompt: None,
+        }));
+        let (rendered, unresolved) = render_section_citations(&body, &resolver);
+        assert!(unresolved.is_empty());
+        assert!(rendered.contains("session transcript"), "rendered: {rendered}");
+        assert!(rendered.contains("Prompt: \"\""), "empty prompt: {rendered}");
+    }
+
+    #[test]
+    fn render_section_citations_workspace_wikilink() {
+        let h = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let body = format!("See [cliproot:{h}].");
+        let resolver = StubResolver(Some(ResolvedSource {
+            title: Some("PKCE Article".to_string()),
+            source_uri: Some("file:///workspace/concepts/pkce.md".to_string()),
+            source_type: cliproot_core::SourceType::HumanAuthored,
+            created_at: Some("2026-04-18".to_string()),
+            session_prompt: None,
+        }));
+        let (rendered, unresolved) = render_section_citations(&body, &resolver);
+        assert!(unresolved.is_empty());
+        assert!(rendered.contains("[[PKCE Article]]"), "rendered: {rendered}");
+        assert!(rendered.contains("workspace note"), "rendered: {rendered}");
+    }
+
+    #[test]
+    fn render_is_deterministic() {
+        let h = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let body = format!("X [cliproot:{h}] Y.");
+        let resolver = StubResolver(Some(http_source("Title", "https://example.com")));
+        let (r1, _) = render_section_citations(&body, &resolver);
+        let (r2, _) = render_section_citations(&body, &resolver);
+        assert_eq!(r1, r2);
+    }
+
+    #[test]
+    fn compile_extract_citations_unchanged_post_render() {
+        let h = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let pre_body = format!("X [cliproot:{h}] Y.");
+        let resolver = StubResolver(Some(http_source("Title", "https://example.com")));
+        let (rendered, _) = render_section_citations(&pre_body, &resolver);
+        let pre_hashes = article::extract_citations_from_markdown(&pre_body);
+        let post_hashes = article::extract_citations_from_markdown(&rendered);
+        assert_eq!(pre_hashes, post_hashes, "invariant: render doesn't change extracted hash list");
     }
 }
