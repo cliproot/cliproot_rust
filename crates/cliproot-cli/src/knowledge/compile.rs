@@ -500,7 +500,20 @@ fn run_compile_inner(
     }
 
     // 9. Rebuild index.md from everything on disk.
-    let rebuilt_index = rebuild_index(&knowledge_dir, &today)?;
+    let written_keys: std::collections::HashSet<(ArticleType, String)> = written
+        .iter()
+        .filter_map(|w| {
+            let parent = w.path.parent()?.file_name()?.to_str()?;
+            let kind = match parent {
+                "concepts" => ArticleType::Concept,
+                "connections" => ArticleType::Connection,
+                "qa" => ArticleType::Qa,
+                _ => return None,
+            };
+            Some((kind, w.canonical_key.clone()))
+        })
+        .collect();
+    let rebuilt_index = rebuild_index(&knowledge_dir, &today, &written_keys, &existing_index)?;
     index::write(&knowledge_dir, &rebuilt_index)?;
 
     // 10. Record a single Activity for the whole compile run.
@@ -819,7 +832,12 @@ fn parse_file_header(header: &str) -> Option<(ArticleType, String)> {
 /// Walk the three article subdirectories and rebuild `Index` from what is
 /// currently on disk.  Does NOT call the LLM — we trust what write_article
 /// persisted.
-fn rebuild_index(knowledge_dir: &Path, today: &str) -> Result<Index, Box<dyn std::error::Error>> {
+fn rebuild_index(
+    knowledge_dir: &Path,
+    today: &str,
+    written_keys: &std::collections::HashSet<(ArticleType, String)>,
+    existing: &Index,
+) -> Result<Index, Box<dyn std::error::Error>> {
     let mut entries: Vec<IndexEntry> = Vec::new();
     for (subdir, kind) in [
         ("concepts", ArticleType::Concept),
@@ -844,17 +862,27 @@ fn rebuild_index(knowledge_dir: &Path, today: &str) -> Result<Index, Box<dyn std
             let uuid = parse_frontmatter_field(&content, "uuid").unwrap_or_default();
             let canonical_key = parse_frontmatter_field(&content, "canonicalKey")
                 .unwrap_or_else(|| stem.to_string());
+            let tags = article::read_tags_from_file(&path);
+            let last_seen = if written_keys.contains(&(kind, canonical_key.clone())) {
+                today.to_string()
+            } else {
+                existing
+                    .entries
+                    .iter()
+                    .find(|e| e.article_type == kind && e.canonical_key == canonical_key)
+                    .map(|e| e.last_seen.clone())
+                    .unwrap_or_else(|| today.to_string())
+            };
             entries.push(IndexEntry {
                 uuid,
                 canonical_key,
                 title,
                 article_type: kind,
-                tags: Vec::new(),
-                last_seen: today.to_string(),
+                tags,
+                last_seen,
             });
         }
     }
-    entries.sort_by(|a, b| a.title.cmp(&b.title));
 
     Ok(Index {
         schema_version: index::SCHEMA_VERSION,
@@ -1438,5 +1466,71 @@ mod tests {
         let pre_hashes = article::extract_citations_from_markdown(&pre_body);
         let post_hashes = article::extract_citations_from_markdown(&rendered);
         assert_eq!(pre_hashes, post_hashes, "invariant: render doesn't change extracted hash list");
+    }
+
+    #[test]
+    fn rebuild_index_carries_forward_last_seen_for_unchanged_articles() {
+        let dir = tempfile::tempdir().unwrap();
+        let knowledge_dir = dir.path().join("knowledge");
+
+        // Write two concept articles.
+        article::write_article(
+            &knowledge_dir, ArticleType::Concept, "pkce-flow", "PKCE Flow",
+            "body", &[], &[], &[], None,
+        ).unwrap();
+        article::write_article(
+            &knowledge_dir, ArticleType::Concept, "oauth-vs-oidc", "OAuth vs OIDC",
+            "body", &[], &[], &[], None,
+        ).unwrap();
+
+        // Existing index: pkce-flow was last seen on a past date.
+        let existing = Index {
+            schema_version: 1,
+            generated_at: String::new(),
+            entries: vec![
+                IndexEntry {
+                    uuid: String::new(),
+                    canonical_key: "pkce-flow".to_string(),
+                    title: "PKCE Flow".to_string(),
+                    article_type: ArticleType::Concept,
+                    tags: vec![],
+                    last_seen: "2026-04-10".to_string(),
+                },
+            ],
+        };
+
+        // This run only touched oauth-vs-oidc.
+        let mut written_keys = std::collections::HashSet::new();
+        written_keys.insert((ArticleType::Concept, "oauth-vs-oidc".to_string()));
+
+        let today = "2026-04-25";
+        let rebuilt = rebuild_index(&knowledge_dir, today, &written_keys, &existing).unwrap();
+
+        let pkce = rebuilt.entries.iter().find(|e| e.canonical_key == "pkce-flow").unwrap();
+        assert_eq!(pkce.last_seen, "2026-04-10", "pkce-flow should carry forward its old last_seen");
+
+        let oauth = rebuilt.entries.iter().find(|e| e.canonical_key == "oauth-vs-oidc").unwrap();
+        assert_eq!(oauth.last_seen, today, "oauth-vs-oidc was written this run");
+    }
+
+    #[test]
+    fn rebuild_index_reads_tags_from_article_frontmatter() {
+        let dir = tempfile::tempdir().unwrap();
+        let knowledge_dir = dir.path().join("knowledge");
+
+        let tags = vec!["oauth".to_string(), "pkce".to_string()];
+        article::write_article(
+            &knowledge_dir, ArticleType::Concept, "my-concept", "My Concept",
+            "body", &tags, &[], &[], None,
+        ).unwrap();
+
+        let existing = Index::default();
+        let mut written_keys = std::collections::HashSet::new();
+        written_keys.insert((ArticleType::Concept, "my-concept".to_string()));
+
+        let rebuilt = rebuild_index(&knowledge_dir, "2026-04-25", &written_keys, &existing).unwrap();
+
+        let entry = rebuilt.entries.iter().find(|e| e.canonical_key == "my-concept").unwrap();
+        assert_eq!(entry.tags, tags);
     }
 }
