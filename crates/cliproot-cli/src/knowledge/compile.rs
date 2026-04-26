@@ -110,6 +110,37 @@ fn find_bracket_tokens(body: &str) -> Vec<(usize, usize, String)> {
     out
 }
 
+/// Remove every `[cliproot:sha256-<hash>]` token whose hash is not in
+/// `allowed`.  Returns (sanitised_body, list_of_stripped_full_hashes).
+///
+/// This is the write-time validation step: the compile LLM is instructed to
+/// cite only from an allowlist, but a single hallucinated hash would otherwise
+/// reach the renderer and produce an "Unresolved clip" footnote.  Stripping
+/// here keeps the article body clean.
+fn strip_unauthorized_citations(
+    body: &str,
+    allowed: &std::collections::HashSet<&str>,
+) -> (String, Vec<String>) {
+    let tokens = find_bracket_tokens(body);
+    if tokens.is_empty() {
+        return (body.to_string(), Vec::new());
+    }
+    let mut out = String::with_capacity(body.len());
+    let mut pos = 0;
+    let mut stripped: Vec<String> = Vec::new();
+    for (start, end, hash) in &tokens {
+        out.push_str(&body[pos..*start]);
+        if allowed.contains(hash.as_str()) {
+            out.push_str(&body[*start..*end]);
+        } else if !stripped.contains(hash) {
+            stripped.push(hash.clone());
+        }
+        pos = *end;
+    }
+    out.push_str(&body[pos..]);
+    (out, stripped)
+}
+
 fn assign_short_hashes(unique_hashes: &[String]) -> Vec<String> {
     let mut lengths = vec![8usize; unique_hashes.len()];
     let mut changed = true;
@@ -403,13 +434,18 @@ fn run_compile_inner(
 
     // 6. Build + send the prompt.
     let article_types = super::article_types::load_article_types(cliproot_dir);
-    let system = compile_system_prompt();
+    // Allowlist of clip hashes the LLM may cite — drawn from the daily digest
+    // body itself.  Anything outside this list is hallucination and gets
+    // stripped before render (see step 8).
+    let allowed_hashes: Vec<String> = article::extract_citations_from_markdown(&daily_body);
+    let system = compile_system_prompt(!allowed_hashes.is_empty());
     let user = build_user_prompt(
         &daily_path,
         &daily_body,
         &existing_index,
         &article_bodies,
         &article_types,
+        &allowed_hashes,
     );
     let result = llm_call(&system, &user, &cfg.models.compile, MAX_OUTPUT_TOKENS)?;
 
@@ -431,16 +467,32 @@ fn run_compile_inner(
     let mut all_linked_clip_hashes: Vec<String> = Vec::new();
     let daily_source_ref = relative_daily_source(&daily_path);
     let resolver = RepoResolver { repo };
+    let allowed_set: std::collections::HashSet<&str> =
+        allowed_hashes.iter().map(String::as_str).collect();
 
     for section in &sections {
         let Some((article_type, slug)) = parse_file_header(&section.header) else {
             continue;
         };
 
+        // Strip any citation tokens the LLM emitted that aren't on the
+        // allowlist (i.e. hashes not present in the daily digest body).  This
+        // is the last line of defence against hallucinated citations.
+        let (sanitised_body, stripped) = strip_unauthorized_citations(&section.body, &allowed_set);
+        for hash in &stripped {
+            append_log_line(
+                &knowledge_dir,
+                &format!(
+                    "STRIPPED hallucinated_clip={hash} article={}/{slug}.md",
+                    article_type.subdir().unwrap_or("?")
+                ),
+            );
+        }
+
         // Render citations: replace [cliproot:sha256-...] with footnote
         // markers + data-crp-hash spans, then append a ## Sources section.
         let (rendered_body, unresolved) =
-            render_section_citations(&section.body, &resolver);
+            render_section_citations(&sanitised_body, &resolver);
         for short in &unresolved {
             append_log_line(
                 &knowledge_dir,
@@ -451,6 +503,10 @@ fn run_compile_inner(
             );
         }
 
+        // Use citations from the sanitised body so frontmatter `clipHashes`
+        // and the CitedIn edges below reflect only legitimate hashes.
+        let section_clip_hashes = article::extract_citations_from_markdown(&sanitised_body);
+
         let write_res = article::write_article(
             &knowledge_dir,
             article_type,
@@ -459,7 +515,7 @@ fn run_compile_inner(
             &rendered_body,
             &section.tags,
             &[daily_source_ref.clone()],
-            &section.clip_hashes_from_body(),
+            &section_clip_hashes,
             None,
         )?;
 
@@ -482,7 +538,7 @@ fn run_compile_inner(
         let artifact_hash = artifact.artifact_hash.0.clone();
 
         // Link citations.
-        for clip_hash in section.clip_hashes_from_body() {
+        for clip_hash in section_clip_hashes.iter().cloned() {
             if repo
                 .link_clip_artifact(
                     &clip_hash,
@@ -669,8 +725,22 @@ fn read_selected_article_bodies(
 
 // ── Prompt templates ──────────────────────────────────────────────────────────
 
-fn compile_system_prompt() -> String {
-    "You are a knowledge curator compiling durable wiki articles from the \
+fn compile_system_prompt(has_allowed_hashes: bool) -> String {
+    let citation_rule = if has_allowed_hashes {
+        "Citations: The user prompt includes an `Allowed clip hashes` list. \
+You may emit `[cliproot:sha256-...]` citation tokens, but ONLY using hashes \
+copied character-for-character from that allowlist. Do not invent, abbreviate, \
+guess, or modify hashes. Each citation must be supported by a sentence in the \
+daily digest that already cites the same hash. If you cannot map a sentence to \
+an allowlisted hash, omit the citation entirely."
+    } else {
+        "Citations: Do NOT emit any `[cliproot:sha256-...]` citation tokens. \
+Today's daily digest contains no clip citations, so there is nothing to cite. \
+Any citation token you emit will be stripped."
+    };
+
+    format!(
+        "You are a knowledge curator compiling durable wiki articles from the \
 user's daily digest.  Given today's digest plus any existing articles that \
 touch the same topics, produce updated article bodies.\n\n\
 Use the user's own terminology — mirror the vocabulary already present in \
@@ -683,13 +753,14 @@ For each article you create or update, emit exactly one section:\n\
 TITLE: <human-readable title>\n\
 TAGS: <tag1>, <tag2>\n\
 BODY:\n\
-<markdown body with inline `[cliproot:sha256-...]` citations>\n\
+<markdown body>\n\
 \n\
 Where `<subdir>` is one of `concepts`, `connections`, `qa`, and `<slug>` is a \
-kebab-case identifier.  Preserve clip citations verbatim from the daily log.  \
-Do NOT emit an index.md section — the pipeline rebuilds the index \
-deterministically.  Do NOT emit prose outside these sections."
-        .to_string()
+kebab-case identifier.  Do NOT emit an index.md section — the pipeline \
+rebuilds the index deterministically.  Do NOT emit prose outside these \
+sections.\n\n\
+{citation_rule}"
+    )
 }
 
 fn build_user_prompt(
@@ -698,6 +769,7 @@ fn build_user_prompt(
     existing_index: &Index,
     article_bodies: &[(IndexEntry, String)],
     article_types: &[String],
+    allowed_hashes: &[String],
 ) -> String {
     let mut user = String::new();
     if !article_types.is_empty() {
@@ -705,6 +777,13 @@ fn build_user_prompt(
             "Known article types in the user's vocabulary: {}\n\n",
             article_types.join(", ")
         ));
+    }
+    if !allowed_hashes.is_empty() {
+        user.push_str("Allowed clip hashes (use ONLY these in `[cliproot:sha256-...]` tokens):\n");
+        for h in allowed_hashes {
+            user.push_str(&format!("- {h}\n"));
+        }
+        user.push('\n');
     }
     user.push_str(&format!(
         "Today's daily digest ({}):\n{daily_body}\n\n",
@@ -747,12 +826,6 @@ struct CompileSection {
     title: String,
     tags: Vec<String>,
     body: String,
-}
-
-impl CompileSection {
-    fn clip_hashes_from_body(&self) -> Vec<String> {
-        article::extract_citations_from_markdown(&self.body)
-    }
 }
 
 fn parse_compile_response(raw: &str) -> Vec<CompileSection> {
@@ -1208,17 +1281,17 @@ mod tests {
         cfg.level = cliproot_store::KnowledgeLevel::Wiki;
         repo.set_knowledge_config(cfg).unwrap();
 
+        // Citation hash must appear in the daily body so it lands on the
+        // compile-time allowlist; otherwise the renderer strips it as
+        // hallucinated.
+        let citation_hash = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         article::write_daily_digest(
             &knowledge_dir,
             "2026-04-13",
-            "## Summary\nWorked on PKCE with citations.",
+            &format!("## Summary\nWorked on PKCE [cliproot:{citation_hash}] with citations."),
             None,
         )
         .unwrap();
-
-        // Body contains a citation token; the clip is not in the store so it
-        // renders as a placeholder — the important property is stability.
-        let citation_hash = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         let mock = move |_: &str, _: &str, model: &str, _: u32| {
             Ok(llm::LlmCallResult {
                 text: format!(
@@ -1537,6 +1610,86 @@ mod tests {
         let pre_hashes = article::extract_citations_from_markdown(&pre_body);
         let post_hashes = article::extract_citations_from_markdown(&rendered);
         assert_eq!(pre_hashes, post_hashes, "invariant: render doesn't change extracted hash list");
+    }
+
+    #[test]
+    fn strip_unauthorized_citations_keeps_allowed_and_drops_others() {
+        let allowed_h = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let bogus_h = "sha256-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let body = format!("Real [cliproot:{allowed_h}] and fake [cliproot:{bogus_h}].");
+        let mut allowed = std::collections::HashSet::new();
+        allowed.insert(allowed_h);
+        let (out, stripped) = strip_unauthorized_citations(&body, &allowed);
+        assert!(out.contains(&format!("[cliproot:{allowed_h}]")));
+        assert!(!out.contains(&format!("[cliproot:{bogus_h}]")));
+        assert_eq!(stripped, vec![bogus_h.to_string()]);
+    }
+
+    #[test]
+    fn strip_unauthorized_citations_empty_allowlist_strips_all() {
+        let h = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let body = format!("Hallucinated [cliproot:{h}].");
+        let allowed = std::collections::HashSet::new();
+        let (out, stripped) = strip_unauthorized_citations(&body, &allowed);
+        assert!(!out.contains("cliproot:"));
+        assert_eq!(stripped.len(), 1);
+    }
+
+    #[test]
+    fn compile_strips_hallucinated_citation_not_in_daily() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = cliproot_store::Repository::init(dir.path()).unwrap();
+        let cliproot_dir = dir.path().join(".cliproot");
+        let knowledge_dir = cliproot_dir.join("knowledge");
+
+        let mut cfg = repo.knowledge_config().unwrap();
+        cfg.level = cliproot_store::KnowledgeLevel::Wiki;
+        repo.set_knowledge_config(cfg).unwrap();
+
+        // Daily digest contains NO citation tokens — allowlist is empty.
+        article::write_daily_digest(
+            &knowledge_dir,
+            "2026-04-13",
+            "## Summary\nPlain prose, no clips.",
+            None,
+        )
+        .unwrap();
+
+        // LLM hallucinates a citation that isn't in the daily.
+        let bogus = "sha256-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz";
+        let mock = move |_: &str, _: &str, model: &str, _: u32| {
+            Ok(llm::LlmCallResult {
+                text: format!(
+                    "### FILE: concepts/pkce-flow.md\n\
+                     TITLE: PKCE Flow\nTAGS: oauth\nBODY:\n\
+                     Body text [cliproot:{bogus}] continues.\n"
+                ),
+                input_tokens: 1,
+                output_tokens: 1,
+                total_tokens: 2,
+                estimated_cost_usd: 0.0,
+                model: model.to_string(),
+                prompt_hash: "h".into(),
+            })
+        };
+
+        let outcome = run_compile_with_llm(&cliproot_dir, &repo, CompileTrigger::Manual, &mock);
+        assert!(matches!(outcome, CompileOutcome::Success { .. }));
+
+        let content =
+            fs::read_to_string(knowledge_dir.join("concepts/pkce-flow.md")).unwrap();
+        assert!(
+            !content.contains("data-crp-hash"),
+            "hallucinated citation must be stripped, no rendered span: {content}"
+        );
+        assert!(
+            !content.contains("Unresolved clip"),
+            "stripped citation must not produce an Unresolved-clip footnote"
+        );
+        assert!(!content.contains(bogus));
+
+        let log = fs::read_to_string(knowledge_dir.join("log.md")).unwrap();
+        assert!(log.contains("STRIPPED hallucinated_clip"), "log: {log}");
     }
 
     #[test]
