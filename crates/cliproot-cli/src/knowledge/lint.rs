@@ -693,6 +693,7 @@ mod tests {
             "Three whole words.",
             &[],
             &[],
+            &[],
             None,
         )
         .unwrap();
@@ -726,6 +727,7 @@ mod tests {
             "pkce",
             "PKCE",
             "Body at write time.",
+            &[],
             &[],
             &[],
             None,
@@ -776,6 +778,7 @@ mod tests {
                 "word ".repeat(210)
             ),
             &[],
+            &[],
             &[bogus.to_string()],
             None,
         )
@@ -810,6 +813,7 @@ mod tests {
             "pkce",
             "PKCE",
             "A claim without any citation.",
+            &[],
             &[],
             &[],
             None,
@@ -848,6 +852,7 @@ mod tests {
                 slug,
                 slug,
                 &format!("{body} {}", "word ".repeat(210)),
+                &[],
                 &[],
                 &[],
                 None,
@@ -899,6 +904,7 @@ mod tests {
             "pkce",
             "PKCE",
             "Tiny body.",
+            &[],
             &[],
             &[],
             None,

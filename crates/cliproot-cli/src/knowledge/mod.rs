@@ -1,4 +1,5 @@
 pub mod article;
+pub mod article_types;
 pub mod compile;
 pub mod flush;
 pub mod index;

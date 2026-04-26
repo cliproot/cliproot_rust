@@ -39,6 +39,242 @@ use super::index::{self, Index, IndexEntry};
 use super::llm;
 use super::state;
 
+// ── Citation resolver ─────────────────────────────────────────────────────────
+
+struct ResolvedSource {
+    title: Option<String>,
+    source_uri: Option<String>,
+    created_at: Option<String>,
+    session_prompt: Option<String>,
+}
+
+trait CitationResolver {
+    fn resolve(&self, clip_hash: &str) -> Option<ResolvedSource>;
+}
+
+struct RepoResolver<'a> {
+    repo: &'a Repository,
+}
+
+impl<'a> CitationResolver for RepoResolver<'a> {
+    fn resolve(&self, clip_hash: &str) -> Option<ResolvedSource> {
+        let clip = self.repo.get_clip_full(clip_hash).ok().flatten()?;
+        let primary = clip.source_refs.first()?;
+        let src = self.repo.get_source_record(primary).ok().flatten()?;
+        Some(ResolvedSource {
+            title: src.title,
+            source_uri: src.source_uri,
+            created_at: src.created_at.and_then(|s| s.get(..10).map(str::to_string)),
+            session_prompt: None,
+        })
+    }
+}
+
+// ── Citation rendering ────────────────────────────────────────────────────────
+
+fn find_bracket_tokens(body: &str) -> Vec<(usize, usize, String)> {
+    const OPEN: &str = "[cliproot:sha256-";
+    let bytes = body.as_bytes();
+    let open_len = OPEN.len();
+    let mut out: Vec<(usize, usize, String)> = Vec::new();
+    let mut i: usize = 0;
+    while i + open_len <= bytes.len() {
+        if &bytes[i..i + open_len] == OPEN.as_bytes() {
+            let hash_start = i + "[cliproot:".len();
+            let mut j = hash_start;
+            while j < bytes.len() {
+                let b = bytes[j];
+                if b.is_ascii_alphanumeric() || b == b'-' || b == b'_' {
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+            if j < bytes.len() && bytes[j] == b']' {
+                let raw = &body[hash_start..j];
+                if let Some(after_prefix) = raw.strip_prefix("sha256-") {
+                    if after_prefix.len() >= 40 {
+                        out.push((i, j + 1, raw.to_string()));
+                        i = j + 1;
+                        continue;
+                    }
+                }
+            }
+            i += 1;
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Remove every `[cliproot:sha256-<hash>]` token whose hash is not in
+/// `allowed`.  Returns (sanitised_body, list_of_stripped_full_hashes).
+///
+/// This is the write-time validation step: the compile LLM is instructed to
+/// cite only from an allowlist, but a single hallucinated hash would otherwise
+/// reach the renderer and produce an "Unresolved clip" footnote.  Stripping
+/// here keeps the article body clean.
+fn strip_unauthorized_citations(
+    body: &str,
+    allowed: &std::collections::HashSet<&str>,
+) -> (String, Vec<String>) {
+    let tokens = find_bracket_tokens(body);
+    if tokens.is_empty() {
+        return (body.to_string(), Vec::new());
+    }
+    let mut out = String::with_capacity(body.len());
+    let mut pos = 0;
+    let mut stripped: Vec<String> = Vec::new();
+    for (start, end, hash) in &tokens {
+        out.push_str(&body[pos..*start]);
+        if allowed.contains(hash.as_str()) {
+            out.push_str(&body[*start..*end]);
+        } else if !stripped.contains(hash) {
+            stripped.push(hash.clone());
+        }
+        pos = *end;
+    }
+    out.push_str(&body[pos..]);
+    (out, stripped)
+}
+
+fn assign_short_hashes(unique_hashes: &[String]) -> Vec<String> {
+    let mut lengths = vec![8usize; unique_hashes.len()];
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for i in 0..unique_hashes.len() {
+            for j in (i + 1)..unique_hashes.len() {
+                let si = hash_prefix_chars(&unique_hashes[i], lengths[i]);
+                let sj = hash_prefix_chars(&unique_hashes[j], lengths[j]);
+                if si == sj {
+                    let max_i = hash_body_len(&unique_hashes[i]);
+                    let max_j = hash_body_len(&unique_hashes[j]);
+                    lengths[i] = (lengths[i] + 2).min(max_i);
+                    lengths[j] = (lengths[j] + 2).min(max_j);
+                    changed = true;
+                }
+            }
+        }
+    }
+    unique_hashes
+        .iter()
+        .enumerate()
+        .map(|(i, h)| hash_prefix_chars(h, lengths[i]).to_string())
+        .collect()
+}
+
+fn hash_prefix_chars(full: &str, len: usize) -> &str {
+    let after = full.strip_prefix("sha256-").unwrap_or("");
+    &after[..len.min(after.len())]
+}
+
+fn hash_body_len(full: &str) -> usize {
+    full.strip_prefix("sha256-").map(|s| s.len()).unwrap_or(0)
+}
+
+fn escape_md_in_title(s: &str) -> String {
+    s.replace('*', "\\*")
+        .replace('[', "\\[")
+        .replace(']', "\\]")
+}
+
+fn uri_host(uri: &str) -> &str {
+    let after_scheme = uri.split("://").nth(1).unwrap_or(uri);
+    after_scheme.split('/').next().unwrap_or(after_scheme)
+}
+
+fn render_source_footnote(footnote_id: &str, src: &ResolvedSource) -> String {
+    let date_suffix = src
+        .created_at
+        .as_deref()
+        .map(|d| format!(" Captured {d}."))
+        .unwrap_or_default();
+    let uri = src.source_uri.as_deref().unwrap_or("");
+
+    if uri.starts_with("http://") || uri.starts_with("https://") {
+        let title = src
+            .title
+            .as_deref()
+            .map(escape_md_in_title)
+            .unwrap_or_else(|| uri_host(uri).to_string());
+        format!("[^{footnote_id}]: *{title}* — <{uri}>.{date_suffix}")
+    } else if uri.starts_with("cliproot://session/") {
+        let title = src.title.as_deref().unwrap_or("Session");
+        let prompt = src.session_prompt.as_deref().unwrap_or("");
+        format!(
+            "[^{footnote_id}]: {title} — session transcript. Prompt: \"{prompt}\".{date_suffix}"
+        )
+    } else if uri.starts_with("file://") || (!uri.is_empty() && !uri.contains("://")) {
+        let title = escape_md_in_title(src.title.as_deref().unwrap_or("Workspace note"));
+        format!("[^{footnote_id}]: [[{title}]] — workspace note.{date_suffix}")
+    } else {
+        let display = src
+            .title
+            .as_deref()
+            .or(src.source_uri.as_deref())
+            .unwrap_or("Unknown source");
+        format!("[^{footnote_id}]: {display}.{date_suffix}")
+    }
+}
+
+/// Replace `[cliproot:sha256-<hash>]` tokens in `body` with footnote markers
+/// and rendered `<span data-crp-hash>` anchors, then append a `## Sources`
+/// section.  Returns (rendered_body, vec_of_unresolved_short_hashes).
+fn render_section_citations(body: &str, resolver: &dyn CitationResolver) -> (String, Vec<String>) {
+    let tokens = find_bracket_tokens(body);
+    if tokens.is_empty() {
+        return (body.to_string(), Vec::new());
+    }
+
+    let mut unique_hashes: Vec<String> = Vec::new();
+    for (_, _, hash) in &tokens {
+        if !unique_hashes.contains(hash) {
+            unique_hashes.push(hash.clone());
+        }
+    }
+
+    let short_hashes = assign_short_hashes(&unique_hashes);
+
+    // Build rendered body by replacing tokens.
+    let mut output = String::with_capacity(body.len() + 512);
+    let mut pos = 0;
+    for (start, end, hash) in &tokens {
+        output.push_str(&body[pos..*start]);
+        let idx = unique_hashes.iter().position(|h| h == hash).unwrap_or(0);
+        let short = &short_hashes[idx];
+        output.push_str(&format!(
+            "[^cr-{short}]<span data-crp-hash=\"{hash}\"></span>"
+        ));
+        pos = *end;
+    }
+    output.push_str(&body[pos..]);
+
+    // Append Sources section.
+    output.push_str("\n\n## Sources\n\n");
+    let mut unresolved_shorts: Vec<String> = Vec::new();
+
+    for (i, hash) in unique_hashes.iter().enumerate() {
+        let short = &short_hashes[i];
+        let footnote_id = format!("cr-{short}");
+        match resolver.resolve(hash) {
+            Some(src) => {
+                output.push_str(&render_source_footnote(&footnote_id, &src));
+                output.push('\n');
+            }
+            None => {
+                output.push_str(&format!(
+                    "[^{footnote_id}]: *Unresolved clip* `sha256-{short}\u{2026}` (no source record found).\n"
+                ));
+                unresolved_shorts.push(short.clone());
+            }
+        }
+    }
+
+    (output, unresolved_shorts)
+}
+
 // ── Outcome + trigger ─────────────────────────────────────────────────────────
 
 /// Why the compile ran.  Affects only the time-of-day gate — all other
@@ -190,8 +426,20 @@ fn run_compile_inner(
     let article_bodies = read_selected_article_bodies(&knowledge_dir, &selected);
 
     // 6. Build + send the prompt.
-    let system = compile_system_prompt();
-    let user = build_user_prompt(&daily_path, &daily_body, &existing_index, &article_bodies);
+    let article_types = super::article_types::load_article_types(cliproot_dir);
+    // Allowlist of clip hashes the LLM may cite — drawn from the daily digest
+    // body itself.  Anything outside this list is hallucination and gets
+    // stripped before render (see step 8).
+    let allowed_hashes: Vec<String> = article::extract_citations_from_markdown(&daily_body);
+    let system = compile_system_prompt(!allowed_hashes.is_empty());
+    let user = build_user_prompt(
+        &daily_path,
+        &daily_body,
+        &existing_index,
+        &article_bodies,
+        &article_types,
+        &allowed_hashes,
+    );
     let result = llm_call(&system, &user, &cfg.models.compile, MAX_OUTPUT_TOKENS)?;
 
     // 7. Parse the response into per-file sections.
@@ -211,19 +459,55 @@ fn run_compile_inner(
     let mut written: Vec<ArticleWriteResult> = Vec::new();
     let mut all_linked_clip_hashes: Vec<String> = Vec::new();
     let daily_source_ref = relative_daily_source(&daily_path);
+    let resolver = RepoResolver { repo };
+    let allowed_set: std::collections::HashSet<&str> =
+        allowed_hashes.iter().map(String::as_str).collect();
 
     for section in &sections {
         let Some((article_type, slug)) = parse_file_header(&section.header) else {
             continue;
         };
+
+        // Strip any citation tokens the LLM emitted that aren't on the
+        // allowlist (i.e. hashes not present in the daily digest body).  This
+        // is the last line of defence against hallucinated citations.
+        let (sanitised_body, stripped) = strip_unauthorized_citations(&section.body, &allowed_set);
+        for hash in &stripped {
+            append_log_line(
+                &knowledge_dir,
+                &format!(
+                    "STRIPPED hallucinated_clip={hash} article={}/{slug}.md",
+                    article_type.subdir().unwrap_or("?")
+                ),
+            );
+        }
+
+        // Render citations: replace [cliproot:sha256-...] with footnote
+        // markers + data-crp-hash spans, then append a ## Sources section.
+        let (rendered_body, unresolved) = render_section_citations(&sanitised_body, &resolver);
+        for short in &unresolved {
+            append_log_line(
+                &knowledge_dir,
+                &format!(
+                    "UNRESOLVED clip=sha256-{short}\u{2026} article={}/{slug}.md",
+                    article_type.subdir().unwrap_or("?")
+                ),
+            );
+        }
+
+        // Use citations from the sanitised body so frontmatter `clipHashes`
+        // and the CitedIn edges below reflect only legitimate hashes.
+        let section_clip_hashes = article::extract_citations_from_markdown(&sanitised_body);
+
         let write_res = article::write_article(
             &knowledge_dir,
             article_type,
             &slug,
             &section.title,
-            &section.body,
+            &rendered_body,
+            &section.tags,
             &[daily_source_ref.clone()],
-            &section.clip_hashes_from_body(),
+            &section_clip_hashes,
             None,
         )?;
 
@@ -246,7 +530,7 @@ fn run_compile_inner(
         let artifact_hash = artifact.artifact_hash.0.clone();
 
         // Link citations.
-        for clip_hash in section.clip_hashes_from_body() {
+        for clip_hash in section_clip_hashes.iter().cloned() {
             if repo
                 .link_clip_artifact(
                     &clip_hash,
@@ -264,7 +548,20 @@ fn run_compile_inner(
     }
 
     // 9. Rebuild index.md from everything on disk.
-    let rebuilt_index = rebuild_index(&knowledge_dir, &today)?;
+    let written_keys: std::collections::HashSet<(ArticleType, String)> = written
+        .iter()
+        .filter_map(|w| {
+            let parent = w.path.parent()?.file_name()?.to_str()?;
+            let kind = match parent {
+                "concepts" => ArticleType::Concept,
+                "connections" => ArticleType::Connection,
+                "qa" => ArticleType::Qa,
+                _ => return None,
+            };
+            Some((kind, w.canonical_key.clone()))
+        })
+        .collect();
+    let rebuilt_index = rebuild_index(&knowledge_dir, &today, &written_keys, &existing_index)?;
     index::write(&knowledge_dir, &rebuilt_index)?;
 
     // 10. Record a single Activity for the whole compile run.
@@ -420,10 +717,27 @@ fn read_selected_article_bodies(
 
 // ── Prompt templates ──────────────────────────────────────────────────────────
 
-fn compile_system_prompt() -> String {
-    "You are a knowledge curator compiling durable wiki articles from a software \
-developer's daily work log.  Given today's daily digest plus any existing \
-articles that touch the same concepts, produce updated article bodies.\n\n\
+fn compile_system_prompt(has_allowed_hashes: bool) -> String {
+    let citation_rule = if has_allowed_hashes {
+        "Citations: The user prompt includes an `Allowed clip hashes` list. \
+You may emit `[cliproot:sha256-...]` citation tokens, but ONLY using hashes \
+copied character-for-character from that allowlist. Do not invent, abbreviate, \
+guess, or modify hashes. Each citation must be supported by a sentence in the \
+daily digest that already cites the same hash. If you cannot map a sentence to \
+an allowlisted hash, omit the citation entirely."
+    } else {
+        "Citations: Do NOT emit any `[cliproot:sha256-...]` citation tokens. \
+Today's daily digest contains no clip citations, so there is nothing to cite. \
+Any citation token you emit will be stripped."
+    };
+
+    format!(
+        "You are a knowledge curator compiling durable wiki articles from the \
+user's daily digest.  Given today's digest plus any existing articles that \
+touch the same topics, produce updated article bodies.\n\n\
+Use the user's own terminology — mirror the vocabulary already present in \
+their digests and existing articles.  Avoid importing domain-specific jargon \
+unless it appears in the source material.\n\n\
 Response format — STRICT:\n\
 For each article you create or update, emit exactly one section:\n\
 \n\
@@ -431,13 +745,14 @@ For each article you create or update, emit exactly one section:\n\
 TITLE: <human-readable title>\n\
 TAGS: <tag1>, <tag2>\n\
 BODY:\n\
-<markdown body with inline `[cliproot:sha256-...]` citations>\n\
+<markdown body>\n\
 \n\
 Where `<subdir>` is one of `concepts`, `connections`, `qa`, and `<slug>` is a \
-kebab-case identifier.  Preserve clip citations verbatim from the daily log.  \
-Do NOT emit an index.md section — the pipeline rebuilds the index \
-deterministically.  Do NOT emit prose outside these sections."
-        .to_string()
+kebab-case identifier.  Do NOT emit an index.md section — the pipeline \
+rebuilds the index deterministically.  Do NOT emit prose outside these \
+sections.\n\n\
+{citation_rule}"
+    )
 }
 
 fn build_user_prompt(
@@ -445,8 +760,23 @@ fn build_user_prompt(
     daily_body: &str,
     existing_index: &Index,
     article_bodies: &[(IndexEntry, String)],
+    article_types: &[String],
+    allowed_hashes: &[String],
 ) -> String {
     let mut user = String::new();
+    if !article_types.is_empty() {
+        user.push_str(&format!(
+            "Known article types in the user's vocabulary: {}\n\n",
+            article_types.join(", ")
+        ));
+    }
+    if !allowed_hashes.is_empty() {
+        user.push_str("Allowed clip hashes (use ONLY these in `[cliproot:sha256-...]` tokens):\n");
+        for h in allowed_hashes {
+            user.push_str(&format!("- {h}\n"));
+        }
+        user.push('\n');
+    }
     user.push_str(&format!(
         "Today's daily digest ({}):\n{daily_body}\n\n",
         daily_path.display()
@@ -486,15 +816,8 @@ fn build_user_prompt(
 struct CompileSection {
     header: String, // the `### FILE: ...` line content, sans prefix
     title: String,
-    #[allow(dead_code)]
     tags: Vec<String>,
     body: String,
-}
-
-impl CompileSection {
-    fn clip_hashes_from_body(&self) -> Vec<String> {
-        article::extract_citations_from_markdown(&self.body)
-    }
 }
 
 fn parse_compile_response(raw: &str) -> Vec<CompileSection> {
@@ -574,7 +897,12 @@ fn parse_file_header(header: &str) -> Option<(ArticleType, String)> {
 /// Walk the three article subdirectories and rebuild `Index` from what is
 /// currently on disk.  Does NOT call the LLM — we trust what write_article
 /// persisted.
-fn rebuild_index(knowledge_dir: &Path, today: &str) -> Result<Index, Box<dyn std::error::Error>> {
+fn rebuild_index(
+    knowledge_dir: &Path,
+    today: &str,
+    written_keys: &std::collections::HashSet<(ArticleType, String)>,
+    existing: &Index,
+) -> Result<Index, Box<dyn std::error::Error>> {
     let mut entries: Vec<IndexEntry> = Vec::new();
     for (subdir, kind) in [
         ("concepts", ArticleType::Concept),
@@ -599,17 +927,27 @@ fn rebuild_index(knowledge_dir: &Path, today: &str) -> Result<Index, Box<dyn std
             let uuid = parse_frontmatter_field(&content, "uuid").unwrap_or_default();
             let canonical_key = parse_frontmatter_field(&content, "canonicalKey")
                 .unwrap_or_else(|| stem.to_string());
+            let tags = article::read_tags_from_file(&path);
+            let last_seen = if written_keys.contains(&(kind, canonical_key.clone())) {
+                today.to_string()
+            } else {
+                existing
+                    .entries
+                    .iter()
+                    .find(|e| e.article_type == kind && e.canonical_key == canonical_key)
+                    .map(|e| e.last_seen.clone())
+                    .unwrap_or_else(|| today.to_string())
+            };
             entries.push(IndexEntry {
                 uuid,
                 canonical_key,
                 title,
                 article_type: kind,
-                tags: Vec::new(),
-                last_seen: today.to_string(),
+                tags,
+                last_seen,
             });
         }
     }
-    entries.sort_by(|a, b| a.title.cmp(&b.title));
 
     Ok(Index {
         schema_version: index::SCHEMA_VERSION,
@@ -661,6 +999,8 @@ fn record_compile_activity(
             "inputTokens": result.input_tokens,
             "outputTokens": result.output_tokens,
             "articlesWritten": written.len(),
+            "renderedCitations": true,
+            "indexSchemaVersion": 2,
         })),
         used_source_refs: used_clip_hashes.to_vec(),
         generated_clip_refs: Vec::new(),
@@ -824,6 +1164,7 @@ mod tests {
             "body",
             &[],
             &[],
+            &[],
             None,
         )
         .unwrap();
@@ -916,6 +1257,76 @@ mod tests {
         match second {
             CompileOutcome::Skipped(r) => assert!(r.contains("no changes")),
             other => panic!("expected Skipped on second run, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn compile_idempotent_with_rendering() {
+        // §7.2.11: a citation-bearing daily body; rendered footnotes in the
+        // written article must not shift the corpus hash between runs.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = cliproot_store::Repository::init(dir.path()).unwrap();
+        let cliproot_dir = dir.path().join(".cliproot");
+        let knowledge_dir = cliproot_dir.join("knowledge");
+
+        let mut cfg = repo.knowledge_config().unwrap();
+        cfg.level = cliproot_store::KnowledgeLevel::Wiki;
+        repo.set_knowledge_config(cfg).unwrap();
+
+        // Citation hash must appear in the daily body so it lands on the
+        // compile-time allowlist; otherwise the renderer strips it as
+        // hallucinated.
+        let citation_hash = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        article::write_daily_digest(
+            &knowledge_dir,
+            "2026-04-13",
+            &format!("## Summary\nWorked on PKCE [cliproot:{citation_hash}] with citations."),
+            None,
+        )
+        .unwrap();
+        let mock = move |_: &str, _: &str, model: &str, _: u32| {
+            Ok(llm::LlmCallResult {
+                text: format!(
+                    "### FILE: concepts/pkce-flow.md\n\
+                     TITLE: PKCE Flow\n\
+                     TAGS: oauth\n\
+                     BODY:\n\
+                     PKCE body. [cliproot:{citation_hash}]\n"
+                ),
+                input_tokens: 100,
+                output_tokens: 50,
+                total_tokens: 150,
+                estimated_cost_usd: 0.001,
+                model: model.to_string(),
+                prompt_hash: "testhash".to_string(),
+            })
+        };
+
+        let first = run_compile_with_llm(&cliproot_dir, &repo, CompileTrigger::Manual, &mock);
+        assert!(
+            matches!(first, CompileOutcome::Success { .. }),
+            "first run should succeed: {first:?}"
+        );
+
+        // Verify citation was rendered into the written article.
+        let article_path = knowledge_dir.join("concepts/pkce-flow.md");
+        let content = fs::read_to_string(&article_path).unwrap();
+        assert!(
+            content.contains("data-crp-hash"),
+            "article should contain rendered citation span after first run"
+        );
+
+        let mock_fail = |_: &str,
+                         _: &str,
+                         _: &str,
+                         _: u32|
+         -> Result<llm::LlmCallResult, Box<dyn std::error::Error>> {
+            Err("LLM must not be called on an idempotent second compile".into())
+        };
+        let second = run_compile_with_llm(&cliproot_dir, &repo, CompileTrigger::Manual, &mock_fail);
+        match second {
+            CompileOutcome::Skipped(r) => assert!(r.contains("no changes")),
+            other => panic!("expected Skipped on second run after citation render, got {other:?}"),
         }
     }
 
@@ -1055,5 +1466,339 @@ mod tests {
         assert!(matches!(outcome, CompileOutcome::BudgetExceeded(_)));
         let log = fs::read_to_string(knowledge_dir.join("log.md")).unwrap();
         assert!(log.contains("BUDGET_EXCEEDED"));
+    }
+
+    // ── §7.2 tests 1–8: render_section_citations ─────────────────────────────
+
+    struct StubResolver(Option<ResolvedSource>);
+
+    impl CitationResolver for StubResolver {
+        fn resolve(&self, _: &str) -> Option<ResolvedSource> {
+            self.0.as_ref().map(|src| ResolvedSource {
+                title: src.title.clone(),
+                source_uri: src.source_uri.clone(),
+                created_at: src.created_at.clone(),
+                session_prompt: src.session_prompt.clone(),
+            })
+        }
+    }
+
+    fn http_source(title: &str, url: &str) -> ResolvedSource {
+        ResolvedSource {
+            title: Some(title.to_string()),
+            source_uri: Some(url.to_string()),
+            created_at: Some("2026-04-18".to_string()),
+            session_prompt: None,
+        }
+    }
+
+    #[test]
+    fn render_section_citations_replaces_single_token() {
+        let h = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let body = format!("PKCE [cliproot:{h}].");
+        let resolver = StubResolver(Some(http_source("Paper", "https://example.com")));
+        let (rendered, unresolved) = render_section_citations(&body, &resolver);
+        assert!(unresolved.is_empty());
+        assert!(rendered.contains("[^cr-aaaaaaaa]<span data-crp-hash=\"sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\">"));
+        assert!(rendered.contains("## Sources"));
+        assert!(rendered.contains("[^cr-aaaaaaaa]: *Paper* — <https://example.com>."));
+        // dot after the span is preserved
+        assert!(rendered.contains("[^cr-aaaaaaaa]<span data-crp-hash=\"sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"></span>."));
+    }
+
+    #[test]
+    fn render_section_citations_dedupes_repeated_clip() {
+        let h = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let body = format!("A [cliproot:{h}] B [cliproot:{h}].");
+        let resolver = StubResolver(Some(http_source("Paper", "https://example.com")));
+        let (rendered, _) = render_section_citations(&body, &resolver);
+        // Two inline markers sharing the same footnote id.
+        assert_eq!(rendered.matches("[^cr-aaaaaaaa]<span").count(), 2);
+        // Only one footnote definition.
+        assert_eq!(rendered.matches("[^cr-aaaaaaaa]:").count(), 1);
+    }
+
+    #[test]
+    fn render_section_citations_resolves_collisions_to_10_chars() {
+        // Two hashes sharing an 8-char prefix.
+        let h1 = "sha256-aaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let h2 = "sha256-aaaaaaaacccccccccccccccccccccccccccccccc";
+        let body = format!("A [cliproot:{h1}] B [cliproot:{h2}].");
+        struct TwoSourceResolver;
+        impl CitationResolver for TwoSourceResolver {
+            fn resolve(&self, hash: &str) -> Option<ResolvedSource> {
+                Some(http_source(hash, "https://example.com"))
+            }
+        }
+        let (rendered, _) = render_section_citations(&body, &TwoSourceResolver);
+        // Both should have been bumped to 10 chars.
+        assert!(
+            rendered.contains("[^cr-aaaaaaaabb]"),
+            "h1 short={}",
+            &h1[7..17]
+        );
+        assert!(
+            rendered.contains("[^cr-aaaaaaaacc]"),
+            "h2 short={}",
+            &h2[7..17]
+        );
+    }
+
+    #[test]
+    fn render_section_citations_unresolved_clip_emits_placeholder() {
+        let h = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let body = format!("Claim [cliproot:{h}].");
+        let resolver = StubResolver(None);
+        let (rendered, unresolved) = render_section_citations(&body, &resolver);
+        assert_eq!(unresolved.len(), 1);
+        assert!(rendered.contains("Unresolved clip"), "rendered: {rendered}");
+    }
+
+    #[test]
+    fn render_section_citations_session_source() {
+        let h = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let body = format!("From session [cliproot:{h}].");
+        let resolver = StubResolver(Some(ResolvedSource {
+            title: Some("Chat".to_string()),
+            source_uri: Some("cliproot://session/abc".to_string()),
+            created_at: Some("2026-04-18".to_string()),
+            session_prompt: None,
+        }));
+        let (rendered, unresolved) = render_section_citations(&body, &resolver);
+        assert!(unresolved.is_empty());
+        assert!(
+            rendered.contains("session transcript"),
+            "rendered: {rendered}"
+        );
+        assert!(
+            rendered.contains("Prompt: \"\""),
+            "empty prompt: {rendered}"
+        );
+    }
+
+    #[test]
+    fn render_section_citations_workspace_wikilink() {
+        let h = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let body = format!("See [cliproot:{h}].");
+        let resolver = StubResolver(Some(ResolvedSource {
+            title: Some("PKCE Article".to_string()),
+            source_uri: Some("file:///workspace/concepts/pkce.md".to_string()),
+            created_at: Some("2026-04-18".to_string()),
+            session_prompt: None,
+        }));
+        let (rendered, unresolved) = render_section_citations(&body, &resolver);
+        assert!(unresolved.is_empty());
+        assert!(
+            rendered.contains("[[PKCE Article]]"),
+            "rendered: {rendered}"
+        );
+        assert!(rendered.contains("workspace note"), "rendered: {rendered}");
+    }
+
+    #[test]
+    fn render_is_deterministic() {
+        let h = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let body = format!("X [cliproot:{h}] Y.");
+        let resolver = StubResolver(Some(http_source("Title", "https://example.com")));
+        let (r1, _) = render_section_citations(&body, &resolver);
+        let (r2, _) = render_section_citations(&body, &resolver);
+        assert_eq!(r1, r2);
+    }
+
+    #[test]
+    fn compile_extract_citations_unchanged_post_render() {
+        let h = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let pre_body = format!("X [cliproot:{h}] Y.");
+        let resolver = StubResolver(Some(http_source("Title", "https://example.com")));
+        let (rendered, _) = render_section_citations(&pre_body, &resolver);
+        let pre_hashes = article::extract_citations_from_markdown(&pre_body);
+        let post_hashes = article::extract_citations_from_markdown(&rendered);
+        assert_eq!(
+            pre_hashes, post_hashes,
+            "invariant: render doesn't change extracted hash list"
+        );
+    }
+
+    #[test]
+    fn strip_unauthorized_citations_keeps_allowed_and_drops_others() {
+        let allowed_h = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let bogus_h = "sha256-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let body = format!("Real [cliproot:{allowed_h}] and fake [cliproot:{bogus_h}].");
+        let mut allowed = std::collections::HashSet::new();
+        allowed.insert(allowed_h);
+        let (out, stripped) = strip_unauthorized_citations(&body, &allowed);
+        assert!(out.contains(&format!("[cliproot:{allowed_h}]")));
+        assert!(!out.contains(&format!("[cliproot:{bogus_h}]")));
+        assert_eq!(stripped, vec![bogus_h.to_string()]);
+    }
+
+    #[test]
+    fn strip_unauthorized_citations_empty_allowlist_strips_all() {
+        let h = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let body = format!("Hallucinated [cliproot:{h}].");
+        let allowed = std::collections::HashSet::new();
+        let (out, stripped) = strip_unauthorized_citations(&body, &allowed);
+        assert!(!out.contains("cliproot:"));
+        assert_eq!(stripped.len(), 1);
+    }
+
+    #[test]
+    fn compile_strips_hallucinated_citation_not_in_daily() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = cliproot_store::Repository::init(dir.path()).unwrap();
+        let cliproot_dir = dir.path().join(".cliproot");
+        let knowledge_dir = cliproot_dir.join("knowledge");
+
+        let mut cfg = repo.knowledge_config().unwrap();
+        cfg.level = cliproot_store::KnowledgeLevel::Wiki;
+        repo.set_knowledge_config(cfg).unwrap();
+
+        // Daily digest contains NO citation tokens — allowlist is empty.
+        article::write_daily_digest(
+            &knowledge_dir,
+            "2026-04-13",
+            "## Summary\nPlain prose, no clips.",
+            None,
+        )
+        .unwrap();
+
+        // LLM hallucinates a citation that isn't in the daily.
+        let bogus = "sha256-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz";
+        let mock = move |_: &str, _: &str, model: &str, _: u32| {
+            Ok(llm::LlmCallResult {
+                text: format!(
+                    "### FILE: concepts/pkce-flow.md\n\
+                     TITLE: PKCE Flow\nTAGS: oauth\nBODY:\n\
+                     Body text [cliproot:{bogus}] continues.\n"
+                ),
+                input_tokens: 1,
+                output_tokens: 1,
+                total_tokens: 2,
+                estimated_cost_usd: 0.0,
+                model: model.to_string(),
+                prompt_hash: "h".into(),
+            })
+        };
+
+        let outcome = run_compile_with_llm(&cliproot_dir, &repo, CompileTrigger::Manual, &mock);
+        assert!(matches!(outcome, CompileOutcome::Success { .. }));
+
+        let content = fs::read_to_string(knowledge_dir.join("concepts/pkce-flow.md")).unwrap();
+        assert!(
+            !content.contains("data-crp-hash"),
+            "hallucinated citation must be stripped, no rendered span: {content}"
+        );
+        assert!(
+            !content.contains("Unresolved clip"),
+            "stripped citation must not produce an Unresolved-clip footnote"
+        );
+        assert!(!content.contains(bogus));
+
+        let log = fs::read_to_string(knowledge_dir.join("log.md")).unwrap();
+        assert!(log.contains("STRIPPED hallucinated_clip"), "log: {log}");
+    }
+
+    #[test]
+    fn rebuild_index_carries_forward_last_seen_for_unchanged_articles() {
+        let dir = tempfile::tempdir().unwrap();
+        let knowledge_dir = dir.path().join("knowledge");
+
+        // Write two concept articles.
+        article::write_article(
+            &knowledge_dir,
+            ArticleType::Concept,
+            "pkce-flow",
+            "PKCE Flow",
+            "body",
+            &[],
+            &[],
+            &[],
+            None,
+        )
+        .unwrap();
+        article::write_article(
+            &knowledge_dir,
+            ArticleType::Concept,
+            "oauth-vs-oidc",
+            "OAuth vs OIDC",
+            "body",
+            &[],
+            &[],
+            &[],
+            None,
+        )
+        .unwrap();
+
+        // Existing index: pkce-flow was last seen on a past date.
+        let existing = Index {
+            schema_version: 1,
+            generated_at: String::new(),
+            entries: vec![IndexEntry {
+                uuid: String::new(),
+                canonical_key: "pkce-flow".to_string(),
+                title: "PKCE Flow".to_string(),
+                article_type: ArticleType::Concept,
+                tags: vec![],
+                last_seen: "2026-04-10".to_string(),
+            }],
+        };
+
+        // This run only touched oauth-vs-oidc.
+        let mut written_keys = std::collections::HashSet::new();
+        written_keys.insert((ArticleType::Concept, "oauth-vs-oidc".to_string()));
+
+        let today = "2026-04-25";
+        let rebuilt = rebuild_index(&knowledge_dir, today, &written_keys, &existing).unwrap();
+
+        let pkce = rebuilt
+            .entries
+            .iter()
+            .find(|e| e.canonical_key == "pkce-flow")
+            .unwrap();
+        assert_eq!(
+            pkce.last_seen, "2026-04-10",
+            "pkce-flow should carry forward its old last_seen"
+        );
+
+        let oauth = rebuilt
+            .entries
+            .iter()
+            .find(|e| e.canonical_key == "oauth-vs-oidc")
+            .unwrap();
+        assert_eq!(oauth.last_seen, today, "oauth-vs-oidc was written this run");
+    }
+
+    #[test]
+    fn rebuild_index_reads_tags_from_article_frontmatter() {
+        let dir = tempfile::tempdir().unwrap();
+        let knowledge_dir = dir.path().join("knowledge");
+
+        let tags = vec!["oauth".to_string(), "pkce".to_string()];
+        article::write_article(
+            &knowledge_dir,
+            ArticleType::Concept,
+            "my-concept",
+            "My Concept",
+            "body",
+            &tags,
+            &[],
+            &[],
+            None,
+        )
+        .unwrap();
+
+        let existing = Index::default();
+        let mut written_keys = std::collections::HashSet::new();
+        written_keys.insert((ArticleType::Concept, "my-concept".to_string()));
+
+        let rebuilt =
+            rebuild_index(&knowledge_dir, "2026-04-25", &written_keys, &existing).unwrap();
+
+        let entry = rebuilt
+            .entries
+            .iter()
+            .find(|e| e.canonical_key == "my-concept")
+            .unwrap();
+        assert_eq!(entry.tags, tags);
     }
 }

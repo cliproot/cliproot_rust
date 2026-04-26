@@ -848,7 +848,7 @@ impl IndexDb {
 
     pub fn find_sources_by_uri(&self, uri: &str) -> Result<Vec<SourceRow>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, source_type, title, source_uri FROM sources WHERE source_uri = ?1",
+            "SELECT id, source_type, title, source_uri, created_at FROM sources WHERE source_uri = ?1",
         )?;
         let rows = stmt.query_map(params![uri], |row| {
             Ok(SourceRow {
@@ -856,21 +856,23 @@ impl IndexDb {
                 source_type: row.get(1)?,
                 title: row.get(2)?,
                 source_uri: row.get(3)?,
+                created_at: row.get(4)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
     pub fn get_source_by_id(&self, source_id: &str) -> Result<Option<SourceRow>, StoreError> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT id, source_type, title, source_uri FROM sources WHERE id = ?1")?;
+        let mut stmt = self.conn.prepare(
+            "SELECT id, source_type, title, source_uri, created_at FROM sources WHERE id = ?1",
+        )?;
         stmt.query_row(params![source_id], |row| {
             Ok(SourceRow {
                 id: row.get(0)?,
                 source_type: row.get(1)?,
                 title: row.get(2)?,
                 source_uri: row.get(3)?,
+                created_at: row.get(4)?,
             })
         })
         .optional()
@@ -998,6 +1000,7 @@ pub struct SourceRow {
     pub source_type: String,
     pub title: Option<String>,
     pub source_uri: Option<String>,
+    pub created_at: Option<String>,
 }
 
 #[derive(Debug, Clone)]

@@ -7,6 +7,7 @@ use cliproot_core::model::{
 use cliproot_store::Repository;
 
 use super::article;
+use super::article_types;
 use super::llm;
 use super::state::{self, FlushState};
 
@@ -88,8 +89,9 @@ fn run_flush_inner(
 
     // ── Build LLM prompt ──────────────────────────────────────────────────
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let system = flush_system_prompt();
-    let user = build_user_prompt(&today, &new_lines);
+    let article_types = article_types::load_article_types(cliproot_dir);
+    let system = flush_system_prompt(!clip_hashes.is_empty());
+    let user = build_user_prompt(&today, &new_lines, &article_types, &clip_hashes);
 
     // ── Call Anthropic API ────────────────────────────────────────────────
     let model = &cfg.models.flush;
@@ -323,25 +325,69 @@ fn update_state_watermarks(flush_state: &mut FlushState, log_dir: &Path) {
 
 // ── Prompt templates ──────────────────────────────────────────────────────────
 
-fn flush_system_prompt() -> String {
-    "You are a knowledge curator for a software development session. \
-Given the raw tool call log from today's AI-assisted coding work, write a concise daily digest.\n\n\
-Format your response as Markdown with these sections:\n\
+fn flush_system_prompt(has_clip_hashes: bool) -> String {
+    let mut prompt = String::from(
+        "You are a knowledge curator reviewing a record of the user's activity — \
+web pages read, files touched, notes written, tools invoked. Produce a concise \
+daily digest in Markdown with these sections:\n\n\
 ## Summary\n\
-One paragraph: what was worked on today.\n\n\
+One paragraph describing what the user worked on today.\n\n\
 ## Key Decisions\n\
-Bullet list of significant technical decisions made.\n\n\
+Bullet list of significant decisions, choices, or conclusions reached.\n\n\
 ## Sources Consulted\n\
-Bullet list of URLs, files, or documents referenced (from WebFetch and Read calls).\n\n\
+Bullet list of URLs, files, or documents referenced.\n\n\
 ## Open Questions\n\
-Any unresolved issues or threads to pick up next session.\n\n\
-Be factual. Do not invent details not present in the log. Omit sections with no content."
-        .to_string()
+Unresolved issues or threads to pick up next session.\n\n\
+Use the user's own terminology — mirror the words they use in their notes and \
+messages. Do not import domain jargon (e.g. software, legal, medical terms) \
+unless that jargon is already present in the source material. Be factual; do \
+not invent details not present in the record. Omit sections with no content.",
+    );
+
+    if has_clip_hashes {
+        prompt.push_str(
+            "\n\nCITATIONS: The user prompt includes an `Allowed clip hashes` list. \
+When a sentence or bullet is supported by one of those clips, append the \
+matching citation token verbatim in the form `[cliproot:sha256-<hash>]` at the \
+end of that sentence or bullet (before the trailing period). Use ONLY hashes \
+from the allowlist — do not invent, abbreviate, or guess hashes. If a sentence \
+is not supported by an allowlisted clip, omit any citation. Each citation \
+token must be copied character-for-character from the allowlist.",
+        );
+    } else {
+        prompt.push_str(
+            "\n\nCITATIONS: Do NOT emit any `[cliproot:sha256-...]` citation tokens. \
+The activity record contains no clipped sources to cite.",
+        );
+    }
+
+    prompt
 }
 
-fn build_user_prompt(date: &str, lines: &[String]) -> String {
+fn build_user_prompt(
+    date: &str,
+    lines: &[String],
+    article_types: &[String],
+    clip_hashes: &[String],
+) -> String {
     let log_text = lines.join("\n");
-    format!("Today's date: {date}\n\nSession log (tool calls):\n{log_text}")
+    let mut out = format!("Today's date: {date}\n\n");
+    if !article_types.is_empty() {
+        out.push_str(&format!(
+            "Known article types in the user's vocabulary: {}\n\n",
+            article_types.join(", ")
+        ));
+    }
+    if !clip_hashes.is_empty() {
+        out.push_str("Allowed clip hashes (use ONLY these in `[cliproot:sha256-...]` tokens):\n");
+        for h in clip_hashes {
+            out.push_str(&format!("- {h}\n"));
+        }
+        out.push('\n');
+    }
+    out.push_str("Activity record:\n");
+    out.push_str(&log_text);
+    out
 }
 
 // ── Log file helper ───────────────────────────────────────────────────────────

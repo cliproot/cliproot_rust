@@ -157,6 +157,7 @@ fn run_query_inner(
             &slug,
             prompt,
             &format!("## Question\n\n{prompt}\n\n## Answer\n\n{answer_text}"),
+            &[],
             &consulted,
             &cited_clips,
             None,
@@ -240,7 +241,7 @@ Output: [\"oauth\", \"pkce\", \"auth flow\"]"
 }
 
 fn phase2_system_prompt() -> String {
-    "You answer a developer's question using the provided wiki articles.  \
+    "You answer the user's question using the provided wiki articles.  \
 When you state a fact or make a claim, cite the supporting source using \
 `[cliproot:sha256-<full-hash>]` inline — prefer citations over `[[wikilinks]]`.  \
 Copy citation hashes verbatim from the article bodies.  If the articles do not \
@@ -407,6 +408,7 @@ mod tests {
             "PKCE Flow",
             "PKCE prevents code-interception attacks in OAuth public clients. \
              See [cliproot:sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa].",
+            &[],
             &[],
             &["sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()],
             None,
