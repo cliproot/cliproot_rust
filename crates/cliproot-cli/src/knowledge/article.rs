@@ -128,9 +128,7 @@ pub fn read_tags_from_file(path: &Path) -> Vec<String> {
 
 fn parse_yaml_inline_list(raw: &str) -> Vec<String> {
     let trimmed = raw.trim();
-    let inner = trimmed
-        .strip_prefix('[')
-        .and_then(|s| s.strip_suffix(']'));
+    let inner = trimmed.strip_prefix('[').and_then(|s| s.strip_suffix(']'));
     let Some(inner) = inner else {
         return Vec::new();
     };
@@ -697,9 +695,7 @@ mod tests {
     #[test]
     fn extract_citations_finds_data_crp_hash_span() {
         let hash = "sha256-abcdefghijabcdefghijabcdefghijabcdefghij";
-        let body = format!(
-            r#"Text [^cr-abcdefgh]<span data-crp-hash="{hash}"></span>."#
-        );
+        let body = format!(r#"Text [^cr-abcdefgh]<span data-crp-hash="{hash}"></span>."#);
         let got = extract_citations_from_markdown(&body);
         assert_eq!(got, vec![hash.to_string()]);
     }
@@ -708,9 +704,8 @@ mod tests {
     fn extract_citations_handles_mixed_bracket_and_span() {
         let h1 = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         let h2 = "sha256-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-        let body = format!(
-            r#"A [cliproot:{h1}] B [^cr-bbbbbbbb]<span data-crp-hash="{h2}"></span>."#
-        );
+        let body =
+            format!(r#"A [cliproot:{h1}] B [^cr-bbbbbbbb]<span data-crp-hash="{h2}"></span>."#);
         let got = extract_citations_from_markdown(&body);
         assert_eq!(got, vec![h1.to_string(), h2.to_string()]);
     }
@@ -719,9 +714,8 @@ mod tests {
     fn extract_citations_handles_mixed_dedupes_cross_format() {
         let h = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         // Same hash appears as both a bracket token and a span.
-        let body = format!(
-            r#"A [cliproot:{h}] B [^cr-aaaaaaaa]<span data-crp-hash="{h}"></span>."#
-        );
+        let body =
+            format!(r#"A [cliproot:{h}] B [^cr-aaaaaaaa]<span data-crp-hash="{h}"></span>."#);
         let got = extract_citations_from_markdown(&body);
         assert_eq!(got.len(), 1);
         assert_eq!(got[0], h.to_string());

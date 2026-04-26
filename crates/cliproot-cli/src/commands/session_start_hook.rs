@@ -294,7 +294,8 @@ mod tests {
     fn read_index_excerpt_returns_raw_content() {
         let dir = tempfile::tempdir().unwrap();
         let kd = dir.path().to_path_buf();
-        let body = "---\nschemaVersion: 2\ngeneratedAt: 2026-04-25T00:00:00Z\narticleCount: 1\n---\n\n\
+        let body =
+            "---\nschemaVersion: 2\ngeneratedAt: 2026-04-25T00:00:00Z\narticleCount: 1\n---\n\n\
             # Wiki Index\n\n1 article · 1 concept · last compile 2026-04-25\n\n\
             ## Recently updated\n\n\
             - [PKCE Flow](concepts/pkce-flow.md) — concept · 2026-04-25\n\n\
@@ -302,7 +303,10 @@ mod tests {
             - [PKCE Flow](concepts/pkce-flow.md) · 2026-04-25\n";
         std::fs::write(kd.join("index.md"), body).unwrap();
         let out = read_index_excerpt(&kd, 5_000).unwrap();
-        assert!(out.contains("## Recently updated"), "v2 content returned as-is: {out}");
+        assert!(
+            out.contains("## Recently updated"),
+            "v2 content returned as-is: {out}"
+        );
         assert!(out.contains("PKCE Flow"), "article link present: {out}");
     }
 

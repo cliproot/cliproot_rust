@@ -168,8 +168,11 @@ fn render(index: &Index) -> String {
         ("Connections", ArticleType::Connection),
         ("Q&A", ArticleType::Qa),
     ] {
-        let mut by_type: Vec<&IndexEntry> =
-            index.entries.iter().filter(|e| e.article_type == kind).collect();
+        let mut by_type: Vec<&IndexEntry> = index
+            .entries
+            .iter()
+            .filter(|e| e.article_type == kind)
+            .collect();
         if by_type.is_empty() {
             continue;
         }
@@ -242,10 +245,14 @@ fn render_summary_line(index: &Index) -> String {
 }
 
 fn plural(n: usize) -> &'static str {
-    if n == 1 { "" } else { "s" }
+    if n == 1 {
+        ""
+    } else {
+        "s"
+    }
 }
 
-fn top_n_recent<'a>(entries: &'a [IndexEntry], n: usize) -> Vec<&'a IndexEntry> {
+fn top_n_recent(entries: &[IndexEntry], n: usize) -> Vec<&IndexEntry> {
     let mut v: Vec<&IndexEntry> = entries.iter().collect();
     v.sort_by(|a, b| {
         b.last_seen
@@ -413,11 +420,19 @@ mod tests {
         assert_eq!(back.generated_at, "2026-04-14T18:03:00Z");
         assert_eq!(back.entries.len(), 2);
         // Entries from the by-type sections.
-        let pkce = back.entries.iter().find(|e| e.canonical_key == "pkce-flow").unwrap();
+        let pkce = back
+            .entries
+            .iter()
+            .find(|e| e.canonical_key == "pkce-flow")
+            .unwrap();
         assert_eq!(pkce.title, "PKCE Flow");
         assert_eq!(pkce.article_type, ArticleType::Concept);
         assert_eq!(pkce.tags, vec!["oauth", "pkce"]);
-        let conn = back.entries.iter().find(|e| e.canonical_key == "oauth-vs-oidc").unwrap();
+        let conn = back
+            .entries
+            .iter()
+            .find(|e| e.canonical_key == "oauth-vs-oidc")
+            .unwrap();
         assert_eq!(conn.article_type, ArticleType::Connection);
     }
 
@@ -564,8 +579,14 @@ mod tests {
         let pos_b = recent_section.find("[B]").unwrap();
         let pos_c = recent_section.find("[C]").unwrap();
         let pos_a = recent_section.find("[A]").unwrap();
-        assert!(pos_b < pos_c, "B (2026-04-25) should appear before C (2026-04-15)");
-        assert!(pos_c < pos_a, "C (2026-04-15) should appear before A (2026-04-10)");
+        assert!(
+            pos_b < pos_c,
+            "B (2026-04-25) should appear before C (2026-04-15)"
+        );
+        assert!(
+            pos_c < pos_a,
+            "C (2026-04-15) should appear before A (2026-04-10)"
+        );
     }
 
     #[test]
@@ -593,8 +614,14 @@ mod tests {
             .split("\n## ")
             .next()
             .unwrap();
-        let bullet_count = recent_section.lines().filter(|l| l.starts_with("- ")).count();
-        assert_eq!(bullet_count, 15, "recently updated capped at 15; got {bullet_count}");
+        let bullet_count = recent_section
+            .lines()
+            .filter(|l| l.starts_with("- "))
+            .count();
+        assert_eq!(
+            bullet_count, 15,
+            "recently updated capped at 15; got {bullet_count}"
+        );
     }
 
     #[test]
@@ -612,8 +639,14 @@ mod tests {
             }],
         };
         let out = render(&idx);
-        assert!(out.contains("## Concepts"), "Concepts section should appear");
-        assert!(!out.contains("## Connections"), "Connections section should be omitted");
+        assert!(
+            out.contains("## Concepts"),
+            "Concepts section should appear"
+        );
+        assert!(
+            !out.contains("## Connections"),
+            "Connections section should be omitted"
+        );
         assert!(!out.contains("## Q&A"), "Q&A section should be omitted");
     }
 
@@ -637,7 +670,11 @@ mod tests {
             "brackets in title must be escaped; got:\n{out}"
         );
         let back = parse(&out).unwrap();
-        let entry = back.entries.iter().find(|e| e.canonical_key == "array-t").unwrap();
+        let entry = back
+            .entries
+            .iter()
+            .find(|e| e.canonical_key == "array-t")
+            .unwrap();
         assert_eq!(entry.title, "Array[T]");
     }
 
@@ -652,9 +689,15 @@ mod tests {
             last_seen: "2026-04-25".to_string(),
         };
         let type_bullet = render_type_bullet(&e);
-        assert!(!type_bullet.contains('*'), "no-tags bullet should have no *…* segment; got: {type_bullet}");
+        assert!(
+            !type_bullet.contains('*'),
+            "no-tags bullet should have no *…* segment; got: {type_bullet}"
+        );
         let recent_bullet = render_recent_bullet(&e);
-        assert!(!recent_bullet.contains('*'), "no-tags recent bullet should have no *…* segment; got: {recent_bullet}");
+        assert!(
+            !recent_bullet.contains('*'),
+            "no-tags recent bullet should have no *…* segment; got: {recent_bullet}"
+        );
     }
 
     #[test]

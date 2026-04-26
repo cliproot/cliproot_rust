@@ -44,7 +44,6 @@ use super::state;
 struct ResolvedSource {
     title: Option<String>,
     source_uri: Option<String>,
-    source_type: cliproot_core::SourceType,
     created_at: Option<String>,
     session_prompt: Option<String>,
 }
@@ -65,7 +64,6 @@ impl<'a> CitationResolver for RepoResolver<'a> {
         Some(ResolvedSource {
             title: src.title,
             source_uri: src.source_uri,
-            source_type: src.source_type,
             created_at: src.created_at.and_then(|s| s.get(..10).map(str::to_string)),
             session_prompt: None,
         })
@@ -173,9 +171,7 @@ fn hash_prefix_chars(full: &str, len: usize) -> &str {
 }
 
 fn hash_body_len(full: &str) -> usize {
-    full.strip_prefix("sha256-")
-        .map(|s| s.len())
-        .unwrap_or(0)
+    full.strip_prefix("sha256-").map(|s| s.len()).unwrap_or(0)
 }
 
 fn escape_md_in_title(s: &str) -> String {
@@ -201,7 +197,7 @@ fn render_source_footnote(footnote_id: &str, src: &ResolvedSource) -> String {
         let title = src
             .title
             .as_deref()
-            .map(|t| escape_md_in_title(t))
+            .map(escape_md_in_title)
             .unwrap_or_else(|| uri_host(uri).to_string());
         format!("[^{footnote_id}]: *{title}* — <{uri}>.{date_suffix}")
     } else if uri.starts_with("cliproot://session/") {
@@ -226,10 +222,7 @@ fn render_source_footnote(footnote_id: &str, src: &ResolvedSource) -> String {
 /// Replace `[cliproot:sha256-<hash>]` tokens in `body` with footnote markers
 /// and rendered `<span data-crp-hash>` anchors, then append a `## Sources`
 /// section.  Returns (rendered_body, vec_of_unresolved_short_hashes).
-fn render_section_citations(
-    body: &str,
-    resolver: &dyn CitationResolver,
-) -> (String, Vec<String>) {
+fn render_section_citations(body: &str, resolver: &dyn CitationResolver) -> (String, Vec<String>) {
     let tokens = find_bracket_tokens(body);
     if tokens.is_empty() {
         return (body.to_string(), Vec::new());
@@ -491,8 +484,7 @@ fn run_compile_inner(
 
         // Render citations: replace [cliproot:sha256-...] with footnote
         // markers + data-crp-hash spans, then append a ## Sources section.
-        let (rendered_body, unresolved) =
-            render_section_citations(&sanitised_body, &resolver);
+        let (rendered_body, unresolved) = render_section_citations(&sanitised_body, &resolver);
         for short in &unresolved {
             append_log_line(
                 &knowledge_dir,
@@ -1331,8 +1323,7 @@ mod tests {
          -> Result<llm::LlmCallResult, Box<dyn std::error::Error>> {
             Err("LLM must not be called on an idempotent second compile".into())
         };
-        let second =
-            run_compile_with_llm(&cliproot_dir, &repo, CompileTrigger::Manual, &mock_fail);
+        let second = run_compile_with_llm(&cliproot_dir, &repo, CompileTrigger::Manual, &mock_fail);
         match second {
             CompileOutcome::Skipped(r) => assert!(r.contains("no changes")),
             other => panic!("expected Skipped on second run after citation render, got {other:?}"),
@@ -1486,7 +1477,6 @@ mod tests {
             self.0.as_ref().map(|src| ResolvedSource {
                 title: src.title.clone(),
                 source_uri: src.source_uri.clone(),
-                source_type: src.source_type.clone(),
                 created_at: src.created_at.clone(),
                 session_prompt: src.session_prompt.clone(),
             })
@@ -1497,7 +1487,6 @@ mod tests {
         ResolvedSource {
             title: Some(title.to_string()),
             source_uri: Some(url.to_string()),
-            source_type: cliproot_core::SourceType::ExternalQuoted,
             created_at: Some("2026-04-18".to_string()),
             session_prompt: None,
         }
@@ -1543,8 +1532,16 @@ mod tests {
         }
         let (rendered, _) = render_section_citations(&body, &TwoSourceResolver);
         // Both should have been bumped to 10 chars.
-        assert!(rendered.contains("[^cr-aaaaaaaabb]"), "h1 short={}", &h1[7..17]);
-        assert!(rendered.contains("[^cr-aaaaaaaacc]"), "h2 short={}", &h2[7..17]);
+        assert!(
+            rendered.contains("[^cr-aaaaaaaabb]"),
+            "h1 short={}",
+            &h1[7..17]
+        );
+        assert!(
+            rendered.contains("[^cr-aaaaaaaacc]"),
+            "h2 short={}",
+            &h2[7..17]
+        );
     }
 
     #[test]
@@ -1564,14 +1561,19 @@ mod tests {
         let resolver = StubResolver(Some(ResolvedSource {
             title: Some("Chat".to_string()),
             source_uri: Some("cliproot://session/abc".to_string()),
-            source_type: cliproot_core::SourceType::AiGenerated,
             created_at: Some("2026-04-18".to_string()),
             session_prompt: None,
         }));
         let (rendered, unresolved) = render_section_citations(&body, &resolver);
         assert!(unresolved.is_empty());
-        assert!(rendered.contains("session transcript"), "rendered: {rendered}");
-        assert!(rendered.contains("Prompt: \"\""), "empty prompt: {rendered}");
+        assert!(
+            rendered.contains("session transcript"),
+            "rendered: {rendered}"
+        );
+        assert!(
+            rendered.contains("Prompt: \"\""),
+            "empty prompt: {rendered}"
+        );
     }
 
     #[test]
@@ -1581,13 +1583,15 @@ mod tests {
         let resolver = StubResolver(Some(ResolvedSource {
             title: Some("PKCE Article".to_string()),
             source_uri: Some("file:///workspace/concepts/pkce.md".to_string()),
-            source_type: cliproot_core::SourceType::HumanAuthored,
             created_at: Some("2026-04-18".to_string()),
             session_prompt: None,
         }));
         let (rendered, unresolved) = render_section_citations(&body, &resolver);
         assert!(unresolved.is_empty());
-        assert!(rendered.contains("[[PKCE Article]]"), "rendered: {rendered}");
+        assert!(
+            rendered.contains("[[PKCE Article]]"),
+            "rendered: {rendered}"
+        );
         assert!(rendered.contains("workspace note"), "rendered: {rendered}");
     }
 
@@ -1609,7 +1613,10 @@ mod tests {
         let (rendered, _) = render_section_citations(&pre_body, &resolver);
         let pre_hashes = article::extract_citations_from_markdown(&pre_body);
         let post_hashes = article::extract_citations_from_markdown(&rendered);
-        assert_eq!(pre_hashes, post_hashes, "invariant: render doesn't change extracted hash list");
+        assert_eq!(
+            pre_hashes, post_hashes,
+            "invariant: render doesn't change extracted hash list"
+        );
     }
 
     #[test]
@@ -1676,8 +1683,7 @@ mod tests {
         let outcome = run_compile_with_llm(&cliproot_dir, &repo, CompileTrigger::Manual, &mock);
         assert!(matches!(outcome, CompileOutcome::Success { .. }));
 
-        let content =
-            fs::read_to_string(knowledge_dir.join("concepts/pkce-flow.md")).unwrap();
+        let content = fs::read_to_string(knowledge_dir.join("concepts/pkce-flow.md")).unwrap();
         assert!(
             !content.contains("data-crp-hash"),
             "hallucinated citation must be stripped, no rendered span: {content}"
@@ -1699,28 +1705,42 @@ mod tests {
 
         // Write two concept articles.
         article::write_article(
-            &knowledge_dir, ArticleType::Concept, "pkce-flow", "PKCE Flow",
-            "body", &[], &[], &[], None,
-        ).unwrap();
+            &knowledge_dir,
+            ArticleType::Concept,
+            "pkce-flow",
+            "PKCE Flow",
+            "body",
+            &[],
+            &[],
+            &[],
+            None,
+        )
+        .unwrap();
         article::write_article(
-            &knowledge_dir, ArticleType::Concept, "oauth-vs-oidc", "OAuth vs OIDC",
-            "body", &[], &[], &[], None,
-        ).unwrap();
+            &knowledge_dir,
+            ArticleType::Concept,
+            "oauth-vs-oidc",
+            "OAuth vs OIDC",
+            "body",
+            &[],
+            &[],
+            &[],
+            None,
+        )
+        .unwrap();
 
         // Existing index: pkce-flow was last seen on a past date.
         let existing = Index {
             schema_version: 1,
             generated_at: String::new(),
-            entries: vec![
-                IndexEntry {
-                    uuid: String::new(),
-                    canonical_key: "pkce-flow".to_string(),
-                    title: "PKCE Flow".to_string(),
-                    article_type: ArticleType::Concept,
-                    tags: vec![],
-                    last_seen: "2026-04-10".to_string(),
-                },
-            ],
+            entries: vec![IndexEntry {
+                uuid: String::new(),
+                canonical_key: "pkce-flow".to_string(),
+                title: "PKCE Flow".to_string(),
+                article_type: ArticleType::Concept,
+                tags: vec![],
+                last_seen: "2026-04-10".to_string(),
+            }],
         };
 
         // This run only touched oauth-vs-oidc.
@@ -1730,10 +1750,21 @@ mod tests {
         let today = "2026-04-25";
         let rebuilt = rebuild_index(&knowledge_dir, today, &written_keys, &existing).unwrap();
 
-        let pkce = rebuilt.entries.iter().find(|e| e.canonical_key == "pkce-flow").unwrap();
-        assert_eq!(pkce.last_seen, "2026-04-10", "pkce-flow should carry forward its old last_seen");
+        let pkce = rebuilt
+            .entries
+            .iter()
+            .find(|e| e.canonical_key == "pkce-flow")
+            .unwrap();
+        assert_eq!(
+            pkce.last_seen, "2026-04-10",
+            "pkce-flow should carry forward its old last_seen"
+        );
 
-        let oauth = rebuilt.entries.iter().find(|e| e.canonical_key == "oauth-vs-oidc").unwrap();
+        let oauth = rebuilt
+            .entries
+            .iter()
+            .find(|e| e.canonical_key == "oauth-vs-oidc")
+            .unwrap();
         assert_eq!(oauth.last_seen, today, "oauth-vs-oidc was written this run");
     }
 
@@ -1744,17 +1775,30 @@ mod tests {
 
         let tags = vec!["oauth".to_string(), "pkce".to_string()];
         article::write_article(
-            &knowledge_dir, ArticleType::Concept, "my-concept", "My Concept",
-            "body", &tags, &[], &[], None,
-        ).unwrap();
+            &knowledge_dir,
+            ArticleType::Concept,
+            "my-concept",
+            "My Concept",
+            "body",
+            &tags,
+            &[],
+            &[],
+            None,
+        )
+        .unwrap();
 
         let existing = Index::default();
         let mut written_keys = std::collections::HashSet::new();
         written_keys.insert((ArticleType::Concept, "my-concept".to_string()));
 
-        let rebuilt = rebuild_index(&knowledge_dir, "2026-04-25", &written_keys, &existing).unwrap();
+        let rebuilt =
+            rebuild_index(&knowledge_dir, "2026-04-25", &written_keys, &existing).unwrap();
 
-        let entry = rebuilt.entries.iter().find(|e| e.canonical_key == "my-concept").unwrap();
+        let entry = rebuilt
+            .entries
+            .iter()
+            .find(|e| e.canonical_key == "my-concept")
+            .unwrap();
         assert_eq!(entry.tags, tags);
     }
 }
