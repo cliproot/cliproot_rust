@@ -9,5 +9,6 @@ pub use pack::{
     PackArtifactEntry, PackCounts, PackManifest, PackObjectEntry, PackRootMode, PackRoots,
 };
 pub use repository::{
-    KnowledgeConfig, KnowledgeLevel, KnowledgeModelsConfig, RemoteConfig, Repository, SessionRecord,
+    parse_clip_timestamp, KnowledgeConfig, KnowledgeLevel, KnowledgeModelsConfig, PromptClipsMode,
+    RemoteConfig, Repository, SessionAttributionConfig, SessionRecord,
 };

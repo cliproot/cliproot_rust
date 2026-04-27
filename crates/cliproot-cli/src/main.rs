@@ -397,6 +397,14 @@ enum HookCommands {
         /// Path to .cliproot/ directory (required when --background is set)
         #[arg(long, hide = true)]
         cliproot_dir: Option<std::path::PathBuf>,
+
+        /// Path to session JSONL transcript (forwarded to background worker for attribution)
+        #[arg(long, hide = true)]
+        transcript_path: Option<std::path::PathBuf>,
+
+        /// Session ID (forwarded to background worker for attribution)
+        #[arg(long, hide = true)]
+        session_id: Option<String>,
     },
 
     /// Handle Claude Code SessionStart hook events: inject a wiki snapshot as additionalContext
@@ -796,7 +804,15 @@ fn main() {
                 harness,
                 background,
                 cliproot_dir,
-            } => commands::flush_hook::run(harness, background, cliproot_dir),
+                transcript_path,
+                session_id,
+            } => commands::flush_hook::run(
+                harness,
+                background,
+                cliproot_dir,
+                transcript_path,
+                session_id,
+            ),
             HookCommands::SessionStart {
                 harness,
                 cliproot_dir,

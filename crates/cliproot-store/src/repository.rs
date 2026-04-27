@@ -116,6 +116,8 @@ pub struct KnowledgeConfig {
     /// ignores the gate.
     #[serde(default = "default_compile_after_hour")]
     pub compile_after_hour: u8,
+    #[serde(default)]
+    pub session_attribution: SessionAttributionConfig,
 }
 
 fn default_max_bg_tokens() -> u64 {
@@ -131,6 +133,52 @@ fn default_compile_after_hour() -> u8 {
     18
 }
 
+// ── Session attribution configuration ────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PromptClipsMode {
+    Off,
+    All,
+    AboveThreshold,
+}
+
+impl Default for PromptClipsMode {
+    fn default() -> Self {
+        Self::AboveThreshold
+    }
+}
+
+fn default_attribution_enabled() -> bool {
+    true
+}
+fn default_prompt_min_chars() -> usize {
+    32
+}
+fn default_prompt_clips_mode() -> PromptClipsMode {
+    PromptClipsMode::AboveThreshold
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SessionAttributionConfig {
+    #[serde(default = "default_attribution_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_prompt_min_chars")]
+    pub prompt_min_chars: usize,
+    #[serde(default = "default_prompt_clips_mode")]
+    pub prompt_clips: PromptClipsMode,
+}
+
+impl Default for SessionAttributionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_attribution_enabled(),
+            prompt_min_chars: default_prompt_min_chars(),
+            prompt_clips: default_prompt_clips_mode(),
+        }
+    }
+}
+
 impl Default for KnowledgeConfig {
     fn default() -> Self {
         Self {
@@ -140,6 +188,7 @@ impl Default for KnowledgeConfig {
             max_bg_cost_per_day_usd: default_max_bg_cost(),
             session_start_inject_budget_chars: default_session_start_inject_budget_chars(),
             compile_after_hour: default_compile_after_hour(),
+            session_attribution: SessionAttributionConfig::default(),
         }
     }
 }
@@ -151,6 +200,7 @@ fn is_knowledge_default(k: &KnowledgeConfig) -> bool {
         && k.max_bg_cost_per_day_usd == default_max_bg_cost()
         && k.session_start_inject_budget_chars == default_session_start_inject_budget_chars()
         && k.compile_after_hour == default_compile_after_hour()
+        && k.session_attribution == SessionAttributionConfig::default()
 }
 
 // ── Remote configuration ──────────────────────────────────────────────────────
@@ -750,6 +800,23 @@ impl Repository {
         Ok(clips)
     }
 
+    /// Returns all clips paired with their `created_at` timestamp.
+    /// Timestamps stored as SQLite `datetime('now')` (`"YYYY-MM-DD HH:MM:SS"`) or
+    /// RFC3339 are both handled; unparseable entries yield `None`.
+    pub fn list_clips_with_created_at(
+        &self,
+    ) -> Result<Vec<(Clip, Option<chrono::DateTime<chrono::Utc>>)>, StoreError> {
+        let hash_ts_pairs = self.index.list_clip_hashes_with_created_at()?;
+        let mut result = Vec::new();
+        for (clip_hash, created_at_str) in hash_ts_pairs {
+            if let Some(clip) = self.get_clip_full(&clip_hash)? {
+                let ts = created_at_str.as_deref().and_then(parse_clip_timestamp);
+                result.push((clip, ts));
+            }
+        }
+        Ok(result)
+    }
+
     pub fn has_clip_for_uri(&self, uri: &str) -> Result<bool, StoreError> {
         let sources = self.index.find_sources_by_uri(uri)?;
         Ok(!sources.is_empty())
@@ -767,12 +834,16 @@ impl Repository {
             id: cliproot_core::CrpId(row.id),
             source_type: serde_json::from_value(serde_json::Value::String(row.source_type))
                 .unwrap_or(cliproot_core::SourceType::Unknown),
-            digital_source_type: None,
+            digital_source_type: row.digital_source_type,
             title: row.title,
             source_uri: row.source_uri,
             author_agent_id: None,
             created_at: row.created_at,
         }))
+    }
+
+    pub fn get_edges_for_subject(&self, subject_ref: &str) -> Result<Vec<Edge>, StoreError> {
+        self.index.get_edges_for_subject(subject_ref)
     }
 
     pub fn trace(&self, hash_or_id: &str) -> Result<Vec<LineageNode>, StoreError> {
@@ -1628,6 +1699,23 @@ fn guess_mime_type(file_name: &str) -> String {
     } else {
         "application/octet-stream".to_string()
     }
+}
+
+/// Parse a clip timestamp stored in either RFC3339 or SQLite datetime format.
+/// SQLite `datetime('now')` produces `"YYYY-MM-DD HH:MM:SS"` (UTC, no timezone).
+pub fn parse_clip_timestamp(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    // Try RFC3339 first (clips written with explicit created_at).
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Some(dt.with_timezone(&chrono::Utc));
+    }
+    // Fall back to SQLite datetime format (default column value).
+    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+        return Some(chrono::DateTime::from_naive_utc_and_offset(
+            naive,
+            chrono::Utc,
+        ));
+    }
+    None
 }
 
 #[cfg(test)]

@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS agents (
 CREATE TABLE IF NOT EXISTS sources (
     id TEXT PRIMARY KEY,
     source_type TEXT NOT NULL,
+    digital_source_type TEXT,
     title TEXT,
     source_uri TEXT,
     author_agent_id TEXT,
@@ -170,6 +171,7 @@ impl IndexDb {
         self.add_column_if_missing("activities", "parameters", "TEXT")?;
         self.add_column_if_missing("activities", "ended_at", "TEXT")?;
         self.add_column_if_missing("activities", "bundle_hash", "TEXT NOT NULL DEFAULT ''")?;
+        self.add_column_if_missing("sources", "digital_source_type", "TEXT")?;
         Ok(())
     }
 
@@ -238,10 +240,11 @@ impl IndexDb {
 
         for source in &bundle.sources {
             tx.execute(
-                "INSERT OR REPLACE INTO sources (id, source_type, title, source_uri, author_agent_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT OR REPLACE INTO sources (id, source_type, digital_source_type, title, source_uri, author_agent_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     source.id.0,
                     serde_json::to_value(&source.source_type)?.as_str().unwrap_or(""),
+                    source.digital_source_type,
                     source.title,
                     source.source_uri,
                     source.author_agent_id.as_ref().map(|a| &a.0),
@@ -252,7 +255,7 @@ impl IndexDb {
 
         for clip in &bundle.clips {
             tx.execute(
-                "INSERT OR REPLACE INTO clips (clip_hash, id, project_id, document_id, created_by_activity_id, text_hash, content, bundle_hash) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                "INSERT OR REPLACE INTO clips (clip_hash, id, project_id, document_id, created_by_activity_id, text_hash, content, bundle_hash, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     clip.clip_hash.0,
                     clip.id.as_ref().map(|i| &i.0),
@@ -262,6 +265,7 @@ impl IndexDb {
                     clip.text_hash.0,
                     clip.content,
                     bundle_hash,
+                    bundle.created_at,
                 ],
             )?;
 
@@ -848,31 +852,47 @@ impl IndexDb {
 
     pub fn find_sources_by_uri(&self, uri: &str) -> Result<Vec<SourceRow>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, source_type, title, source_uri, created_at FROM sources WHERE source_uri = ?1",
+            "SELECT id, source_type, digital_source_type, title, source_uri, created_at FROM sources WHERE source_uri = ?1",
         )?;
         let rows = stmt.query_map(params![uri], |row| {
             Ok(SourceRow {
                 id: row.get(0)?,
                 source_type: row.get(1)?,
-                title: row.get(2)?,
-                source_uri: row.get(3)?,
-                created_at: row.get(4)?,
+                digital_source_type: row.get(2)?,
+                title: row.get(3)?,
+                source_uri: row.get(4)?,
+                created_at: row.get(5)?,
             })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    /// Returns `(clip_hash, created_at_str)` for every clip in the index.
+    /// `created_at_str` may be SQLite `datetime` format or RFC3339.
+    pub fn list_clip_hashes_with_created_at(
+        &self,
+    ) -> Result<Vec<(String, Option<String>)>, StoreError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT clip_hash, created_at FROM clips ORDER BY created_at")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
     pub fn get_source_by_id(&self, source_id: &str) -> Result<Option<SourceRow>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, source_type, title, source_uri, created_at FROM sources WHERE id = ?1",
+            "SELECT id, source_type, digital_source_type, title, source_uri, created_at FROM sources WHERE id = ?1",
         )?;
         stmt.query_row(params![source_id], |row| {
             Ok(SourceRow {
                 id: row.get(0)?,
                 source_type: row.get(1)?,
-                title: row.get(2)?,
-                source_uri: row.get(3)?,
-                created_at: row.get(4)?,
+                digital_source_type: row.get(2)?,
+                title: row.get(3)?,
+                source_uri: row.get(4)?,
+                created_at: row.get(5)?,
             })
         })
         .optional()
@@ -998,6 +1018,7 @@ impl IndexDb {
 pub struct SourceRow {
     pub id: String,
     pub source_type: String,
+    pub digital_source_type: Option<String>,
     pub title: Option<String>,
     pub source_uri: Option<String>,
     pub created_at: Option<String>,
