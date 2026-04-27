@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use crate::commands::background;
 use crate::commands::harness::{parse_stop_input, Harness};
 use crate::knowledge::{compile, flush};
+use crate::transcript::session_attribution;
 
 /// Discover the `.cliproot/` directory by walking up from `cwd`.
 fn discover_cliproot_dir(cwd: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
@@ -34,9 +35,11 @@ pub fn run(
     harness: Harness,
     background: bool,
     cliproot_dir_override: Option<PathBuf>,
+    transcript_path: Option<PathBuf>,
+    session_id: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if background {
-        run_background(cliproot_dir_override)
+        run_background(cliproot_dir_override, transcript_path, session_id)
     } else {
         run_foreground(harness)
     }
@@ -75,7 +78,13 @@ fn run_foreground(harness: Harness) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // 5. Spawn detached background process (`cliproot hook flush --background`).
-    spawn_background(&cliproot_dir)?;
+    //    Forward transcript_path and session_id so the background worker can run
+    //    session attribution after flush completes.
+    spawn_background(
+        &cliproot_dir,
+        hook.transcript_path.as_deref(),
+        &hook.session_id,
+    )?;
 
     // 6. Return without printing anything — Stop hooks don't need a decision.
     Ok(())
@@ -85,15 +94,19 @@ fn run_foreground(harness: Harness) -> Result<(), Box<dyn std::error::Error>> {
 
 fn run_background(
     cliproot_dir_override: Option<PathBuf>,
+    transcript_path: Option<PathBuf>,
+    session_id: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    run_background_impl(cliproot_dir_override)?;
+    run_background_impl(cliproot_dir_override, transcript_path, session_id)?;
     Ok(())
 }
 
-/// In-process implementation of the background flush + optional compile chain.
+/// In-process implementation of the background flush + optional compile + attribution chain.
 /// Pub(crate) so the integration test can call it directly without a subprocess.
 pub(crate) fn run_background_impl(
     cliproot_dir_override: Option<PathBuf>,
+    transcript_path: Option<PathBuf>,
+    session_id: Option<String>,
 ) -> Result<compile::CompileOutcome, Box<dyn std::error::Error>> {
     let cliproot_dir =
         cliproot_dir_override.ok_or("--cliproot-dir is required in --background mode")?;
@@ -118,6 +131,25 @@ pub(crate) fn run_background_impl(
     };
     eprintln!("cliproot hook flush [background] → compile: {compile_outcome}");
     log_background_compile_outcome_if_unlogged(&knowledge_dir, &compile_outcome);
+
+    // Session attribution runs after flush/compile so newly-created clips are present.
+    if let (Some(tp), Some(sid)) = (transcript_path, session_id) {
+        let attr_cfg = repo.knowledge_config()?.session_attribution.clone();
+        let attr_outcome = session_attribution::run_session_attribution(
+            &cliproot_dir,
+            &repo,
+            &sid,
+            &tp,
+            &attr_cfg,
+        );
+        eprintln!("cliproot hook flush [background] → attribute: {attr_outcome}");
+        log_attribution_outcome_if_unlogged(&knowledge_dir, &attr_outcome);
+    } else {
+        flush::append_log_line(
+            &knowledge_dir,
+            "[background] attribute: SKIPPED no transcript path",
+        );
+    }
 
     Ok(compile_outcome)
 }
@@ -150,20 +182,48 @@ fn log_background_compile_outcome_if_unlogged(
 
 // ── Detached spawn ────────────────────────────────────────────────────────────
 
-fn spawn_background(cliproot_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn spawn_background(
+    cliproot_dir: &Path,
+    transcript_path: Option<&str>,
+    session_id: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let cliproot_dir_str = cliproot_dir
         .to_str()
         .ok_or("cliproot dir path is not valid UTF-8")?;
-    background::spawn(
-        &[
-            "hook",
-            "flush",
-            "--background",
-            "--cliproot-dir",
-            cliproot_dir_str,
-        ],
-        "cliproot-flush-hook",
-    )
+
+    let mut args = vec![
+        "hook",
+        "flush",
+        "--background",
+        "--cliproot-dir",
+        cliproot_dir_str,
+        "--session-id",
+        session_id,
+    ];
+
+    // Leak the String so we can push a &str into args; both live until spawn() returns.
+    let tp_owned;
+    if let Some(tp) = transcript_path {
+        tp_owned = tp.to_string();
+        args.push("--transcript-path");
+        args.push(&tp_owned);
+    }
+
+    background::spawn(&args, "cliproot-flush-hook")
+}
+
+fn log_attribution_outcome_if_unlogged(
+    knowledge_dir: &Path,
+    outcome: &session_attribution::AttributionOutcome,
+) {
+    match outcome {
+        session_attribution::AttributionOutcome::Error(_)
+        | session_attribution::AttributionOutcome::Skipped(_) => {
+            flush::append_log_line(knowledge_dir, &format!("[background] attribute: {outcome}"));
+        }
+        session_attribution::AttributionOutcome::Success { .. }
+        | session_attribution::AttributionOutcome::AlreadyRun => {}
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -280,7 +340,7 @@ mod tests {
         state.daily_total_tokens = 0;
         crate::knowledge::state::save(&state, &knowledge_dir).unwrap();
 
-        let compile_outcome = run_background_impl(Some(cliproot_dir)).unwrap();
+        let compile_outcome = run_background_impl(Some(cliproot_dir), None, None).unwrap();
         assert!(
             matches!(
                 compile_outcome,
